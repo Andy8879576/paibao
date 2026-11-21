@@ -102,6 +102,7 @@ body.mode-draw #fabs,body.mode-pick #fabs,body.mode-edit #fabs{bottom:calc(env(s
 .btn{min-height:48px;padding:0 16px;border-radius:11px;background:var(--paper);font-weight:600;font-size:16px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
 .btn.primary{background:var(--blue);color:#fff}
 .btn.danger{color:var(--danger)}
+.btn.primary.dangerfill{background:var(--danger);color:#fff}
 .btn.full{width:100%}
 .btn.sm{min-height:38px;font-size:14px;padding:0 12px;border-radius:9px}
 input[type=text],textarea,select{width:100%;font:inherit;font-size:17px;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
@@ -319,6 +320,13 @@ body.mode-draw #cross{display:block}
   <h3>資料</h3>
   <p class="note">區塊、派報進度和標記都存在這支手機的 Safari 裡。清除 Safari 網站資料會一起刪掉。</p>
   <div class="btnrow"><button class="btn danger" id="wipeAll">刪除所有資料</button></div>
+</section>
+
+<section class="sheet" id="shConfirm" role="alertdialog" aria-labelledby="cfMsg">
+  <div class="grab"></div>
+  <h2 id="cfMsg">確定嗎？</h2>
+  <p class="note" id="cfNote"></p>
+  <div class="btnrow"><button class="btn" id="cfCancel" style="flex:1">取消</button><button class="btn primary" id="cfOk" style="flex:1">確定</button></div>
 </section>
 
 <div id="toast" role="status"></div>
@@ -1682,7 +1690,7 @@ const Core = (() => {
       case 'progress': { const p = progressNums(); say(`已派${p.all ? Math.floor(p.done / p.all * 100) : 0}%，還剩${sayDist(p.left)}要派`, { noLast: true }); break; }
       case 'mark': addMark(c.arg, c.arg === 'other' ? c.note : ''); break;
       case 'locate': correctByText(c.arg); break;
-      case 'stop': if (nav && confirm('要結束這次導航嗎？進度會保留。')) stopNav(); break;
+      case 'stop': if (nav) askConfirm('要結束這次導航嗎？', '派報進度會保留，下次可以接著派。', '結束導航').then(ok => { if (ok) stopNav(); }); break;
       default: { const m = '聽不懂「' + (raw || '') + '」，請再說一次'; toast(m); if (nav) say(m, { noLast: true }); }
     }
   }
@@ -1756,7 +1764,21 @@ const Core = (() => {
     $$('.sheet.open').forEach(s => s.classList.remove('open'));
     if (!keepBackdrop) $('#backdrop').style.display = 'none';
   }
-  $('#backdrop').onclick = () => closeSheets();
+  $('#backdrop').onclick = () => { closeSheets(); if (cfResolve) { const r = cfResolve; cfResolve = null; r(false); } };
+  // App 內的確認畫面（不用瀏覽器的 confirm，iPhone 主畫面 App 有時不會跳出）
+  let cfResolve = null, cfPrev = null;
+  function askConfirm(msg, note, okText, danger) {
+    return new Promise(res => {
+      if (cfResolve) cfResolve(false);
+      $('#cfMsg').textContent = msg; $('#cfNote').textContent = note || ''; $('#cfNote').style.display = note ? '' : 'none';
+      const ok = $('#cfOk'); ok.textContent = okText || '確定'; ok.classList.toggle('dangerfill', !!danger);
+      const prev = document.querySelector('.sheet.open'); cfPrev = prev && prev.id !== 'shConfirm' ? prev.id : null;
+      cfResolve = res; openSheet('shConfirm');
+    });
+  }
+  const cfDone = v => { const r = cfResolve, prev = cfPrev; cfResolve = null; cfPrev = null; closeSheets(); if (r) r(v); if (prev) openSheet(prev); };
+  $('#cfOk').onclick = () => cfDone(true);
+  $('#cfCancel').onclick = () => cfDone(false);
   $$('.sheet').forEach(sh => { const x = document.createElement('button'); x.className = 'x'; x.setAttribute('aria-label', '關閉'); x.textContent = '✕'; x.onclick = () => closeSheets(); sh.prepend(x); });
   $$('[data-close]').forEach(b => (b.onclick = () => closeSheets()));
 
@@ -1788,9 +1810,9 @@ const Core = (() => {
     if (act === 'use') { closeSheets(); selectBlock(id); }
     else if (act === 'show') { b.show = !b.show; saveBlocks(); renderBlocks(); renderBlockList(); }
     else if (act === 'rename') askName('區塊改名', b.name, v => { if (v) { b.name = v; saveBlocks(); renderBlocks(); } });
-    else if (act === 'reset') { if (confirm('要把「' + b.name + '」的派報進度全部清掉，重新開始嗎？')) { st.covered.clear(); st.skipped.clear(); st.hits.clear(); saveProgress(true); renderNet(); renderBlocks(); renderBlockList(); toast('進度已重設'); } }
+    else if (act === 'reset') { askConfirm('重設「' + b.name + '」的進度？', '已派、跳過的紀錄會全部清掉，從頭開始。', '重設進度', true).then(ok => { if (!ok) return; st.covered.clear(); st.skipped.clear(); st.hits.clear(); saveProgress(true); renderNet(); renderBlocks(); toast('進度已重設'); }); }
     else if (act === 'dl') { closeSheets(); downloadNet(); }
-    else if (act === 'del') { if (confirm('確定刪除「' + b.name + '」？進度也會一起刪除。')) { deleteBlock(id); renderBlockList(); } }
+    else if (act === 'del') { askConfirm('刪除「' + b.name + '」？', '區塊、圖資和派報進度會一起刪除，刪掉就找不回來。', '刪除區塊', true).then(ok => { if (!ok) return; deleteBlock(id); toast('已刪除「' + b.name + '」'); }); }
   });
 
   /* ---------- 設定 ---------- */
@@ -1818,9 +1840,9 @@ const Core = (() => {
   });
   $('#ttsTest').onclick = () => say(`前方${S.preDist || 30}公尺右轉，進入中山路一段120巷。${S.nearDist}公尺後右轉。`, { noLast: true });
   $('#wipeAll').onclick = () => {
-    if (!confirm('確定刪除所有區塊、進度、標記和設定？刪掉就找不回來。')) return;
+    askConfirm('刪除所有資料？', '所有區塊、進度、標記和設定都會刪除，刪掉就找不回來。', '全部刪除', true).then(ok => { if (!ok) return;
     Object.keys(localStorage).filter(k => k.startsWith('pb_')).forEach(k => localStorage.removeItem(k));
-    location.reload();
+    location.reload(); });
   };
   $$('#layerBtns .btn').forEach(b => (b.onclick = () => { setLayer(b.dataset.layer); }));
 
