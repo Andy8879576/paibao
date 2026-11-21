@@ -142,6 +142,16 @@ textarea{min-height:130px;font-family:ui-monospace,Menlo,monospace;font-size:15p
 .me.fixed{background:#E07A12}
 .mk{font-size:22px;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,.4)}
 .hn{background:var(--blue);color:#fff;border:1.5px solid #fff;border-radius:4px;font-size:11px;font-weight:700;padding:1px 4px;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.3);transform:translate(-50%,-50%);display:inline-block;font-family:var(--font)}
+.rarr{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid #fff;filter:drop-shadow(0 0 1px rgba(10,30,70,.9));margin:-5px 0 0 -6px}
+.rpin{display:flex;align-items:center;justify-content:center;border-radius:50%;color:#fff;font:800 14px/1 var(--font);border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);width:28px;height:28px}
+.rpin.start{background:#2E9E5B;width:34px;height:34px;font-size:16px}
+.rpin.end{background:#C2382F;width:34px;height:34px;font-size:16px}
+.rpin.turn{background:#fff;color:#1F4E9E;border-color:#1F4E9E;font-size:13px}
+.rpin.turn.next{background:#1F4E9E;color:#fff;border-color:#fff;width:34px;height:34px;font-size:15px}
+#sideLegend{position:fixed;left:12px;z-index:500;bottom:calc(env(safe-area-inset-bottom) + 200px);display:none;gap:12px}
+body.mode-nav #sideLegend{display:flex}
+#sideLegend span{display:flex;align-items:center;gap:6px}
+#sideLegend i{display:inline-block;width:18px;height:6px;border-radius:3px}
 .vtx{width:26px;height:26px;border-radius:50%;background:#fff;border:3px solid var(--blue);color:var(--blue);font:700 12px/20px var(--font);text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.35);cursor:grab}
 .modebar p.sub{font-size:13px;font-weight:400;color:var(--muted);margin:-4px 0 10px}
 #cross{position:fixed;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;z-index:450;pointer-events:none;display:none}
@@ -181,6 +191,7 @@ body.mode-draw #cross{display:block}
 </section>
 <div id="caption"><span></span></div>
 <div id="cross" aria-hidden="true"></div>
+<div class="pill" id="sideLegend"><span><i style="background:#0097A7"></i>左側</span><span><i style="background:#8E44AD"></i>右側</span></div>
 
 <div id="fabs">
   <button class="fab" id="fabFollow" aria-label="跟隨我的位置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
@@ -1368,7 +1379,7 @@ const Core = (() => {
   function stopNav(done) {
     if (!nav) return;
     saveProgress(true);
-    nav = null; L_route.clearLayers();
+    nav = null; L_route.clearLayers(); L_arrows.clearLayers(); map.removeLayer(L_arrows); sideL = sideR = routeAhead = null;
     if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
     if (silent) silent.pause();
     setMode('idle'); renderBlocks();
@@ -1397,25 +1408,107 @@ const Core = (() => {
     stopNav(true);
   }
 
-  // 路線（只畫前面一段，方便看）
-  let routeAhead = null, routeCase = null, manDot = null;
+  // 路線：整條剩餘路線（淡）、前方一段（粗）、左右側色帶、方向箭頭、起點/終點/轉折點
+  const SIDE_L = '#0097A7', SIDE_R = '#8E44AD';
+  const L_arrows = L.layerGroup();
+  let routeAhead = null, routeCase = null, routeRest = null, sideL = null, sideR = null;
+  let arrowMk = [], turnMk = [], lastRestS = -99, lastAheadPts = [];
+  const TURN_CH = { '左轉': '左', '右轉': '右', '靠左': '左', '靠右': '右', '回頭': '回' };
+  const pin = (cls, txt, sz) => L.divIcon({ className: '', html: `<div class="rpin ${cls}">${txt}</div>`, iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2] });
   function drawRoute() {
-    L_route.clearLayers();
+    L_route.clearLayers(); L_arrows.clearLayers(); arrowMk = []; turnMk = []; lastRestS = -99;
+    const r = nav.route;
+    routeRest = L.polyline([], { renderer: cv, color: '#1F4E9E', weight: 5, opacity: 0.35, interactive: false, lineCap: 'round', lineJoin: 'round' }).addTo(L_route);
     routeCase = L.polyline([], { renderer: cv, color: '#fff', weight: 11, opacity: 0.9, interactive: false, lineCap: 'round', lineJoin: 'round' }).addTo(L_route);
+    sideL = L.polyline([], { renderer: cv, color: SIDE_L, weight: 5, opacity: 0.95, interactive: false, lineCap: 'butt', lineJoin: 'round' }).addTo(L_route);
+    sideR = L.polyline([], { renderer: cv, color: SIDE_R, weight: 5, opacity: 0.95, interactive: false, lineCap: 'butt', lineJoin: 'round' }).addTo(L_route);
     routeAhead = L.polyline([], { renderer: cv, color: '#1F4E9E', weight: 7, opacity: 0.95, interactive: false, lineCap: 'round', lineJoin: 'round' }).addTo(L_route);
-    manDot = L.circleMarker([0, 0], { renderer: cv, radius: 8, color: '#fff', weight: 3, fillColor: '#1F4E9E', fillOpacity: 1, interactive: false }).addTo(L_route);
+    // 行進方向箭頭（每 35 公尺一個）
+    for (let d = 15; d < r.total - 5; d += 35) {
+      const a = C.pointAtRoute(r, d), b = C.pointAtRoute(r, Math.min(r.total, d + 3));
+      const mk = L.marker(a, { interactive: false, keyboard: false, icon: L.divIcon({ className: '', html: `<div class="rarr" style="transform:rotate(${C.bearing(a, b)}deg)"></div>`, iconSize: [0, 0] }) }).addTo(L_arrows);
+      mk._d = d; arrowMk.push(mk);
+    }
+    // 起點、終點
+    L.marker(r.coords[0], { interactive: false, keyboard: false, zIndexOffset: 900, icon: pin('start', '起', 34) }).addTo(L_route);
+    L.marker(r.coords[r.coords.length - 1], { interactive: false, keyboard: false, zIndexOffset: 800, icon: pin('end', '終', 34) }).addTo(L_route);
+    // 轉折點
+    r.maneuvers.forEach((m, i) => {
+      if (m.type !== 'turn' && m.type !== 'uturn') return;
+      const mk = L.marker(C.pointAtRoute(r, m.d), { interactive: false, keyboard: false, zIndexOffset: 500, icon: pin('turn', TURN_CH[m.dir] || '轉', 28) }).addTo(L_route);
+      mk._d = m.d; mk._i = i; mk._ch = TURN_CH[m.dir] || '轉'; mk._next = false; turnMk.push(mk);
+    });
+    toggleArrows();
     updateRouteLine(0);
   }
+  function toggleArrows() {
+    if (!nav) { map.removeLayer(L_arrows); return; }
+    if (map.getZoom() >= 16) L_arrows.addTo(map); else map.removeLayer(L_arrows);
+  }
+  // 把線往左右偏移固定的螢幕像素（換算成公尺，縮放時重算）；px > 0 是行進方向的右側
+  function offsetLine(pts, px) {
+    if (pts.length < 2) return [];
+    const lat0 = pts[0][0] * Math.PI / 180;
+    const mpp = 40075016.686 * Math.cos(lat0) / Math.pow(2, map.getZoom() + 8); // 每像素幾公尺
+    const off = px * mpp;
+    const kx = 111320 * Math.cos(lat0), ky = 110574;
+    const P = pts.map(p => [p[1] * kx, p[0] * ky]); // x=東, y=北（公尺）
+    const out = [];
+    for (let i = 0; i < P.length; i++) {
+      const a = P[i - 1], b = P[i], c = P[i + 1];
+      // 右手邊的法向量：方向 (dx,dy) → (dy,-dx)
+      const nrm = (u, v) => { const dx = v[0] - u[0], dy = v[1] - u[1], l = Math.hypot(dx, dy); return l > 0.05 ? [dy / l, -dx / l] : null; };
+      const n1 = a ? nrm(a, b) : null, n2 = c ? nrm(b, c) : null;
+      let ox, oy;
+      if (n1 && n2) {
+        const sx = n1[0] + n2[0], sy = n1[1] + n2[1], s2 = sx * sx + sy * sy;
+        if (s2 < 0.1) continue; // 回頭：略過
+        const k = Math.min(2 / s2, 4); // miter = 1/cos²(θ/2)，限制尖角
+        ox = sx * k * off; oy = sy * k * off;
+      } else {
+        const n = n1 || n2; if (!n) continue;
+        ox = n[0] * off; oy = n[1] * off;
+      }
+      out.push([(b[1] + oy) / ky, (b[0] + ox) / kx]);
+    }
+    return out;
+  }
+  function drawSides() {
+    if (!sideL) return;
+    const w = map.getZoom() >= 18 ? 9 : map.getZoom() >= 16 ? 7 : 5;
+    sideR.setLatLngs(offsetLine(lastAheadPts, w));
+    sideL.setLatLngs(offsetLine(lastAheadPts, -w));
+  }
+  map.on('zoomend', () => { toggleArrows(); drawSides(); if (nav && routeAhead) updateRouteLine(nav.tr.s); });
   function updateRouteLine(s) {
     const r = nav.route; if (!routeAhead) return;
     const end = Math.min(r.total, s + 450);
     const pts = [C.pointAtRoute(r, s)];
-    for (let i = 0; i < r.coords.length; i++) { if (r.cum[i] <= s) continue; if (r.cum[i] >= end) break; pts.push(r.coords[i]); }
+    for (let i = 0; i < r.coords.length; i++) { if (r.cum[i] <= s + 0.5) continue; if (r.cum[i] >= end - 0.5) break; pts.push(r.coords[i]); }
     pts.push(C.pointAtRoute(r, end));
     routeAhead.setLatLngs(pts); routeCase.setLatLngs(pts);
+    // 左右色帶只畫目前這條路（到下一個轉折點為止），避免死巷來回時重疊
     const m = r.maneuvers[nav.mi];
-    if (m && m.type !== 'start') manDot.setLatLng(C.pointAtRoute(r, m.d)).setStyle({ opacity: 1, fillOpacity: 1 });
-    else manDot.setStyle({ opacity: 0, fillOpacity: 0 });
+    const sEnd = Math.min(end, s + 200, m && m.type !== 'start' ? Math.max(s + 1, m.d) : end);
+    const sp = [C.pointAtRoute(r, s)];
+    for (let i = 0; i < r.coords.length; i++) { if (r.cum[i] <= s + 0.5) continue; if (r.cum[i] >= sEnd - 0.5) break; sp.push(r.coords[i]); }
+    sp.push(C.pointAtRoute(r, sEnd));
+    lastAheadPts = sp; drawSides();
+    // 剩餘全路線、箭頭（走超過 5 公尺才更新）
+    if (Math.abs(s - lastRestS) > 5) {
+      lastRestS = s;
+      const rest = [C.pointAtRoute(r, s)];
+      for (let i = 0; i < r.coords.length; i++) if (r.cum[i] > s) rest.push(r.coords[i]);
+      routeRest.setLatLngs(rest);
+      for (const mk of arrowMk) { const show = mk._d > s + 2; if (mk._shown !== show) { mk.setOpacity(show ? 1 : 0); mk._shown = show; } }
+    }
+    // 轉折點：走過的隱藏，下一個放大
+    for (const mk of turnMk) {
+      const ahead = mk._i - nav.mi;
+      const show = mk._d > s - 3 && (map.getZoom() >= 17 || ahead < 5), next = mk._i === nav.mi;
+      if (mk._shown !== show) { mk.setOpacity(show ? 1 : 0); mk._shown = show; }
+      if (mk._next !== next) { mk._next = next; mk.setIcon(pin(next ? 'turn next' : 'turn', mk._ch, next ? 34 : 28)); mk.setZIndexOffset(next ? 1000 : 500); }
+    }
   }
 
   function arrowSvg(m) {
