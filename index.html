@@ -142,7 +142,13 @@ textarea{min-height:130px;font-family:ui-monospace,Menlo,monospace;font-size:15p
 .me.fixed{background:#E07A12}
 .mk{font-size:22px;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,.4)}
 .hn{background:var(--blue);color:#fff;border:1.5px solid #fff;border-radius:4px;font-size:11px;font-weight:700;padding:1px 4px;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.3);transform:translate(-50%,-50%);display:inline-block;font-family:var(--font)}
-.vtx{width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid var(--blue)}
+.vtx{width:26px;height:26px;border-radius:50%;background:#fff;border:3px solid var(--blue);color:var(--blue);font:700 12px/20px var(--font);text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.35);cursor:grab}
+.modebar p.sub{font-size:13px;font-weight:400;color:var(--muted);margin:-4px 0 10px}
+#cross{position:fixed;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;z-index:450;pointer-events:none;display:none}
+#cross::before,#cross::after{content:"";position:absolute;background:#C2382F;box-shadow:0 0 0 1px #fff}
+#cross::before{left:21px;top:0;width:2px;height:44px}
+#cross::after{top:21px;left:0;height:2px;width:44px}
+body.mode-draw #cross{display:block}
 
 /* 其他 */
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 120px);z-index:1200;background:rgba(20,26,34,.92);color:#fff;padding:12px 16px;border-radius:12px;font-size:15px;line-height:1.45;max-width:88vw;display:none;text-align:center}
@@ -174,6 +180,7 @@ textarea{min-height:130px;font-family:ui-monospace,Menlo,monospace;font-size:15p
   <div class="plate-sub"><span id="navRoad"></span><span id="navProg"></span></div>
 </section>
 <div id="caption"><span></span></div>
+<div id="cross" aria-hidden="true"></div>
 
 <div id="fabs">
   <button class="fab" id="fabFollow" aria-label="跟隨我的位置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
@@ -201,8 +208,9 @@ textarea{min-height:130px;font-family:ui-monospace,Menlo,monospace;font-size:15p
 </nav>
 
 <div class="modebar" id="drawbar">
-  <p id="drawTip">在地圖上依序點出區塊的角落，至少 3 點。</p>
-  <div class="row"><button class="dbtn" id="drawUndo">復原</button><button class="dbtn" id="drawCancel">取消</button><button class="dbtn primary" id="drawDone">完成</button></div>
+  <p id="drawTip">點地圖加角落，至少 3 點。</p>
+  <p class="sub">用手指拖動地圖可以移到畫面外；也可以把十字對準位置，按「加中心點」。點錯了可以直接拖動白色圓點。</p>
+  <div class="row"><button class="dbtn" id="drawUndo">復原</button><button class="dbtn" id="drawCenter">加中心點</button><button class="dbtn" id="drawCancel">取消</button><button class="dbtn primary" id="drawDone">完成</button></div>
 </div>
 <div class="modebar" id="pickbar">
   <p>在地圖上點你現在站的位置。</p>
@@ -1596,12 +1604,25 @@ const Core = (() => {
     L_draw.clearLayers();
     const pts = draw.pts;
     if (pts.length) {
-      L.polyline(pts.length >= 3 ? pts.concat([pts[0]]) : pts, { color: '#1F4E9E', weight: 3, dashArray: '8 6', interactive: false }).addTo(L_draw);
-      if (pts.length >= 3) L.polygon(pts, { stroke: false, fillColor: '#1F4E9E', fillOpacity: 0.08, interactive: false }).addTo(L_draw);
-      pts.forEach(p => L.marker(p, { interactive: false, icon: L.divIcon({ className: '', html: '<div class="vtx"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(L_draw));
+      const line = L.polyline(pts.length >= 3 ? pts.concat([pts[0]]) : pts, { color: '#1F4E9E', weight: 3, dashArray: '8 6', interactive: false }).addTo(L_draw);
+      const fill = pts.length >= 3 ? L.polygon(pts, { stroke: false, fillColor: '#1F4E9E', fillOpacity: 0.08, interactive: false }).addTo(L_draw) : null;
+      pts.forEach((p, i) => {
+        const mk = L.marker(p, { draggable: true, autoPan: true, autoPanPadding: [70, 70], keyboard: false, icon: L.divIcon({ className: '', html: `<div class="vtx">${i + 1}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(L_draw);
+        mk.on('drag', e => {
+          const ll = e.target.getLatLng(); pts[i] = [ll.lat, ll.lng];
+          line.setLatLngs(pts.length >= 3 ? pts.concat([pts[0]]) : pts);
+          if (fill) fill.setLatLngs(pts);
+        });
+        mk.on('dragend', updateDraw);
+      });
     }
-    $('#drawTip').textContent = pts.length < 3 ? `在地圖上依序點出區塊的角落，已點 ${pts.length} 點，至少要 3 點。` : `已點 ${pts.length} 點。可以繼續加點，或按「完成」。`;
+    $('#drawTip').textContent = pts.length < 3 ? `點地圖加角落，已加 ${pts.length} 點，至少要 3 點。` : `已加 ${pts.length} 點，可以繼續加，或按「完成」。`;
     $('#drawDone').disabled = pts.length < 3; $('#drawDone').style.opacity = pts.length < 3 ? 0.5 : 1;
+  }
+  function addDrawPoint(p) {
+    draw.pts.push(p); updateDraw();
+    // 點在畫面邊緣時自動移動地圖，方便繼續往外點
+    map.panInside(p, { paddingTopLeft: [80, 120], paddingBottomRight: [80, 230] });
   }
   function endDraw() { draw = null; L_draw.clearLayers(); setMode('idle'); }
 
@@ -1713,7 +1734,7 @@ const Core = (() => {
   /* ---------- 地圖點擊 ---------- */
   map.on('click', e => {
     const p = [e.latlng.lat, e.latlng.lng];
-    if (st.mode === 'draw') { draw.pts.push(p); updateDraw(); }
+    if (st.mode === 'draw') { addDrawPoint(p); }
     else if (st.mode === 'pick') { setMode(nav ? 'nav' : 'idle'); applyCorrection(p, ''); }
     else if (st.mode === 'edit') {
       if (!st.net) return;
@@ -1741,6 +1762,7 @@ const Core = (() => {
   };
   $('#drawUndo').onclick = () => { if (draw && draw.pts.length) { draw.pts.pop(); updateDraw(); } };
   $('#drawCancel').onclick = endDraw;
+  $('#drawCenter').onclick = () => { if (!draw) return; const c = map.getCenter(); addDrawPoint([c.lat, c.lng]); };
   $('#drawDone').onclick = () => {
     if (!draw || draw.pts.length < 3) return;
     const pts = draw.pts.slice(); endDraw();
