@@ -1,0 +1,1789 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="派報系統">
+<meta name="theme-color" content="#1F4E9E">
+<title>派報系統</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{
+  --blue:#1F4E9E; --blue-d:#163B78; --todo:#F28C28; --done:#2E9E5B; --skip:#AEB6C1;
+  --bg:#FFFFFF; --paper:#F3F5F8; --ink:#1E242C; --muted:#5E6B7A; --line:#D5DBE3; --danger:#C2382F;
+  --font:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root{ --bg:#1A1F26; --paper:#232A33; --ink:#EEF2F6; --muted:#A3AEBB; --line:#3A4552; color-scheme:dark; }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;-webkit-text-size-adjust:100%}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #7FA7E8;outline-offset:2px}
+#map{position:fixed;inset:0;z-index:0;background:#E5E3DF}
+.leaflet-control-attribution{font-size:10px}
+
+/* 上方 */
+#top{position:fixed;left:0;right:0;top:0;z-index:500;display:flex;gap:8px;align-items:flex-start;justify-content:space-between;padding:calc(env(safe-area-inset-top) + 10px) 12px 0}
+.blockchip{display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:8px 14px;box-shadow:0 2px 8px rgba(20,30,45,.18);max-width:62vw;text-align:left}
+.blockchip small{font-size:12px;color:var(--muted)}
+.blockchip b{font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.pill{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;box-shadow:0 2px 8px rgba(20,30,45,.18);display:flex;align-items:center;gap:6px;white-space:nowrap}
+.pill i{width:9px;height:9px;border-radius:50%;background:#9AA4B1;display:inline-block}
+.pill.good i{background:var(--done)} .pill.mid i{background:#E0A21B} .pill.bad i{background:var(--danger)}
+.pill.fixed{border-color:var(--blue)}
+
+/* 門牌樣式導航卡 */
+#navcard{position:fixed;left:10px;right:10px;top:calc(env(safe-area-inset-top) + 8px);z-index:600;display:none}
+.plate{background:var(--blue);color:#fff;border-radius:14px;padding:5px;box-shadow:0 6px 18px rgba(15,35,80,.35)}
+.plate-in{border:2px solid rgba(255,255,255,.92);border-radius:10px;display:flex;align-items:center;gap:12px;padding:10px 14px}
+.plate .ico{flex:0 0 64px;height:64px;display:flex;align-items:center;justify-content:center}
+.plate .ico svg{width:60px;height:60px}
+.plate .txt{min-width:0;flex:1}
+.plate .dist{font-size:40px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums;letter-spacing:.5px}
+.plate .dist small{font-size:20px;font-weight:700;margin-left:4px}
+.plate .instr{font-size:19px;font-weight:600;line-height:1.35;margin-top:2px}
+.plate-sub{display:flex;justify-content:space-between;gap:10px;padding:6px 8px 2px;font-size:14px;opacity:.92;font-variant-numeric:tabular-nums}
+.plate-sub span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#caption{position:fixed;left:16px;right:16px;z-index:590;top:calc(env(safe-area-inset-top) + 150px);display:none;justify-content:center;pointer-events:none}
+#caption span{background:rgba(20,26,34,.82);color:#fff;border-radius:10px;padding:8px 12px;font-size:15px;line-height:1.4;max-width:100%}
+
+/* 地圖右側按鈕 */
+#fabs{position:fixed;right:12px;z-index:500;bottom:calc(env(safe-area-inset-bottom) + 112px);display:flex;flex-direction:column;gap:10px}
+.fab{width:50px;height:50px;border-radius:50%;background:var(--bg);border:1px solid var(--line);box-shadow:0 2px 8px rgba(20,30,45,.2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--ink)}
+.fab svg{width:24px;height:24px}
+.fab.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+
+/* 底部操作列 */
+.dock{position:fixed;left:0;right:0;bottom:0;z-index:700;background:var(--bg);border-top:1px solid var(--line);padding:10px 10px calc(env(safe-area-inset-bottom) + 10px);box-shadow:0 -4px 16px rgba(20,30,45,.12)}
+#dockIdle{display:grid;grid-template-columns:1fr 1fr 1.5fr 1fr;gap:8px}
+.dbtn{min-height:58px;border-radius:12px;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:14px;font-weight:600;padding:6px 4px;line-height:1.2}
+.dbtn svg{width:22px;height:22px}
+.dbtn.primary{background:var(--blue);color:#fff;font-size:17px}
+.dbtn:active{filter:brightness(.92)}
+#dockNav{display:none;grid-template-columns:repeat(2,1fr) 92px repeat(2,1fr);grid-template-rows:auto auto;gap:8px;align-items:center}
+#dockNav .dbtn{min-height:52px;font-size:13.5px;padding:4px 2px;white-space:nowrap;letter-spacing:0}
+#btnMic{grid-column:3;grid-row:1 / span 2;width:88px;height:88px;border-radius:50%;background:var(--blue);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:13px;font-weight:700;gap:2px;justify-self:center;box-shadow:0 4px 14px rgba(31,78,158,.45)}
+#btnMic svg{width:34px;height:34px}
+#btnPause.on{background:#FFE9C7;color:#7A4A00}
+
+body.mode-nav #dockIdle,body.mode-nav #top .blockchip{display:none}
+body.mode-nav #dockNav{display:grid}
+body.mode-nav #navcard{display:block}
+body.mode-nav #top{justify-content:flex-end;top:auto;bottom:calc(env(safe-area-inset-bottom) + 200px);padding-top:0}
+body.mode-nav #fabs{bottom:calc(env(safe-area-inset-bottom) + 250px)}
+body.mode-nav #fabEdit,body.mode-nav #fabLayer{display:none}
+
+/* 模式提示列 */
+.modebar{position:fixed;left:10px;right:10px;bottom:calc(env(safe-area-inset-bottom) + 10px);z-index:800;display:none;background:var(--bg);border-radius:14px;box-shadow:0 6px 18px rgba(20,30,45,.25);padding:12px;border:2px solid var(--blue)}
+.modebar p{margin:0 0 10px;font-size:16px;font-weight:600;line-height:1.4}
+.modebar .row{display:flex;gap:8px}
+.modebar .row .dbtn{flex:1;min-height:50px}
+body.mode-draw #drawbar,body.mode-pick #pickbar,body.mode-edit #editbar{display:block}
+body.mode-draw .dock,body.mode-pick .dock,body.mode-edit .dock{display:none!important}
+body.mode-draw #fabs,body.mode-pick #fabs,body.mode-edit #fabs{bottom:calc(env(safe-area-inset-bottom) + 150px)}
+
+/* 底部面板 */
+#backdrop{position:fixed;inset:0;background:rgba(10,15,22,.38);z-index:900;display:none}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:950;background:var(--bg);border-radius:18px 18px 0 0;max-height:86vh;overflow:auto;padding:8px 16px calc(env(safe-area-inset-bottom) + 18px);display:none;box-shadow:0 -8px 30px rgba(10,20,35,.25);-webkit-overflow-scrolling:touch}
+.sheet.open{display:block;animation:up .22s ease-out}
+@keyframes up{from{transform:translateY(30px);opacity:.6}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.sheet.open{animation:none}.listen .ring{animation:none!important}}
+.sheet .x{position:absolute;top:10px;right:10px;width:40px;height:40px;border-radius:50%;background:var(--paper);font-size:17px;color:var(--muted)}
+.sheet .grab{width:42px;height:5px;border-radius:3px;background:var(--line);margin:4px auto 10px}
+.sheet h2{font-size:21px;margin:4px 0 12px}
+.sheet h3{font-size:15px;color:var(--muted);margin:18px 0 8px;font-weight:600}
+.sheet p.note{font-size:14px;color:var(--muted);line-height:1.55;margin:6px 0 12px}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.btn{min-height:48px;padding:0 16px;border-radius:11px;background:var(--paper);font-weight:600;font-size:16px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.btn.primary{background:var(--blue);color:#fff}
+.btn.danger{color:var(--danger)}
+.btn.full{width:100%}
+.btn.sm{min-height:38px;font-size:14px;padding:0 12px;border-radius:9px}
+input[type=text],textarea,select{width:100%;font:inherit;font-size:17px;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+textarea{min-height:130px;font-family:ui-monospace,Menlo,monospace;font-size:15px}
+.blk{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+.blk.cur{border:2px solid var(--blue)}
+.blk .hd{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.blk .hd b{font-size:18px}
+.blk .meta{font-size:14px;color:var(--muted);margin-top:2px}
+.bar{height:8px;border-radius:4px;background:var(--paper);overflow:hidden;margin:8px 0}
+.bar i{display:block;height:100%;background:var(--done)}
+.blk .btnrow{margin-bottom:0}
+.empty{text-align:center;padding:18px 8px;color:var(--muted);line-height:1.6}
+
+.set{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.set label{font-size:16px;line-height:1.35}
+.set label small{display:block;font-size:13px;color:var(--muted)}
+.set .val{font-variant-numeric:tabular-nums;font-weight:700;min-width:64px;text-align:right}
+.set input[type=range]{width:100%;margin-top:8px;accent-color:var(--blue)}
+.set.col{flex-direction:column;align-items:stretch}
+.set.col .top{display:flex;justify-content:space-between;align-items:center}
+.sw{position:relative;width:52px;height:30px;flex:0 0 52px}
+.sw input{opacity:0;width:100%;height:100%;margin:0;position:absolute;z-index:1}
+.sw span{position:absolute;inset:0;border-radius:15px;background:var(--line);transition:background .15s}
+.sw span::after{content:"";position:absolute;width:24px;height:24px;border-radius:50%;background:#fff;top:3px;left:3px;transition:transform .15s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.sw input:checked+span{background:var(--blue)}
+.sw input:checked+span::after{transform:translateX(22px)}
+
+.marks{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0 12px}
+.marks button{min-height:72px;border-radius:12px;background:var(--paper);font-size:17px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.marks button span{font-size:26px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:14px;color:var(--muted);margin:4px 0 10px}
+.legend i{display:inline-block;width:22px;height:5px;border-radius:3px;vertical-align:middle;margin-right:6px}
+
+/* 地圖上的元件 */
+.me{width:22px;height:22px;border-radius:50%;background:#2B7BE4;border:3px solid #fff;box-shadow:0 0 0 2px rgba(43,123,228,.35),0 2px 6px rgba(0,0,0,.35);position:relative}
+.me .cone{position:absolute;left:50%;top:50%;width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:18px solid rgba(43,123,228,.55);transform-origin:50% 100%;margin-left:-9px;margin-top:-28px}
+.me.fixed{background:#E07A12}
+.mk{font-size:22px;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,.4)}
+.hn{background:var(--blue);color:#fff;border:1.5px solid #fff;border-radius:4px;font-size:11px;font-weight:700;padding:1px 4px;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.3);transform:translate(-50%,-50%);display:inline-block;font-family:var(--font)}
+.vtx{width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid var(--blue)}
+
+/* 其他 */
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 120px);z-index:1200;background:rgba(20,26,34,.92);color:#fff;padding:12px 16px;border-radius:12px;font-size:15px;line-height:1.45;max-width:88vw;display:none;text-align:center}
+#busy{position:fixed;inset:0;z-index:1300;background:rgba(10,15,22,.45);display:none;align-items:center;justify-content:center}
+#busy div{background:var(--bg);border-radius:14px;padding:20px 24px;font-size:17px;font-weight:600;display:flex;gap:12px;align-items:center}
+.spin{width:22px;height:22px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--blue);animation:rot .8s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+.listen{position:fixed;inset:0;z-index:1250;background:rgba(10,15,22,.55);display:none;align-items:center;justify-content:center;flex-direction:column;gap:18px;color:#fff}
+.listen .ring{width:130px;height:130px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;animation:pulse 1.2s ease-in-out infinite}
+.listen .ring svg{width:56px;height:56px}
+.listen p{margin:0;font-size:18px;font-weight:600;text-align:center;line-height:1.5;padding:0 24px}
+.listen small{font-size:14px;opacity:.85}
+@keyframes pulse{50%{box-shadow:0 0 0 18px rgba(31,78,158,.35)}}
+</style>
+</head>
+<body class="mode-idle">
+<div id="map"></div>
+
+<header id="top">
+  <button class="blockchip" id="btnBlock" aria-label="選擇區塊"><small>目前區塊</small><b id="blockName">還沒有區塊</b></button>
+  <div class="pill" id="gpsPill"><i></i><span>GPS 定位中</span></div>
+</header>
+
+<section id="navcard" class="plate" aria-live="polite">
+  <div class="plate-in">
+    <div class="ico" id="navIco"></div>
+    <div class="txt"><div class="dist" id="navDist">--</div><div class="instr" id="navText">規劃中</div></div>
+  </div>
+  <div class="plate-sub"><span id="navRoad"></span><span id="navProg"></span></div>
+</section>
+<div id="caption"><span></span></div>
+
+<div id="fabs">
+  <button class="fab" id="fabFollow" aria-label="跟隨我的位置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+  <button class="fab" id="fabLayer" aria-label="切換地圖">地圖</button>
+  <button class="fab" id="fabEdit" aria-label="手動標示已派">已派</button>
+</div>
+
+<nav class="dock" id="dockIdle">
+  <button class="dbtn" id="btnDraw"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18 8 5l9 3 3 10z"/><circle cx="4" cy="18" r="1.5" fill="currentColor"/><circle cx="8" cy="5" r="1.5" fill="currentColor"/><circle cx="17" cy="8" r="1.5" fill="currentColor"/></svg>圈選區塊</button>
+  <button class="dbtn" id="btnBlocks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>我的區塊</button>
+  <button class="dbtn primary" id="btnStart"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l13 8-13 8z"/></svg>開始派報</button>
+  <button class="dbtn" id="btnSettings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>設定</button>
+</nav>
+
+<nav class="dock" id="dockNav">
+  <button class="dbtn" id="btnRepeat">重複</button>
+  <button class="dbtn" id="btnPause">暫停</button>
+  <button id="btnMic" aria-label="語音指令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>說指令</button>
+  <button class="dbtn" id="btnFix">修正位置</button>
+  <button class="dbtn" id="btnMark">標記</button>
+  <button class="dbtn" id="btnReroute">重新規劃</button>
+  <button class="dbtn" id="btnStop">結束</button>
+  <button class="dbtn" id="btnSkip">跳過這條</button>
+  <button class="dbtn" id="btnProg">進度</button>
+</nav>
+
+<div class="modebar" id="drawbar">
+  <p id="drawTip">在地圖上依序點出區塊的角落，至少 3 點。</p>
+  <div class="row"><button class="dbtn" id="drawUndo">復原</button><button class="dbtn" id="drawCancel">取消</button><button class="dbtn primary" id="drawDone">完成</button></div>
+</div>
+<div class="modebar" id="pickbar">
+  <p>在地圖上點你現在站的位置。</p>
+  <div class="row"><button class="dbtn" id="pickCancel">取消</button></div>
+</div>
+<div class="modebar" id="editbar">
+  <p>點一下街道，切換「已派」或「未派」。</p>
+  <div class="row"><button class="dbtn primary" id="editDone">完成</button></div>
+</div>
+
+<div id="backdrop"></div>
+
+<section class="sheet" id="shBlocks">
+  <div class="grab"></div>
+  <h2>我的區塊</h2>
+  <div class="legend"><span><i style="background:var(--todo)"></i>待派</span><span><i style="background:var(--done)"></i>已派</span><span><i style="background:var(--skip)"></i>跳過</span></div>
+  <div id="blkList"></div>
+  <div class="btnrow">
+    <button class="btn primary" id="blkDraw">在地圖上圈選</button>
+    <button class="btn" id="blkCoords">輸入經緯度</button>
+    <button class="btn" id="blkHideAll">隱藏全部框線</button>
+  </div>
+</section>
+
+<section class="sheet" id="shCoords">
+  <div class="grab"></div>
+  <h2>用經緯度建立區塊</h2>
+  <p class="note">每行一個點，格式「緯度, 經度」，例如 25.0137, 121.4627。輸入 2 個點會當成長方形的對角；3 點以上照順序連成區塊。</p>
+  <textarea id="coordText" placeholder="25.0150, 121.4610&#10;25.0150, 121.4650&#10;25.0120, 121.4650&#10;25.0120, 121.4610"></textarea>
+  <h3>區塊名稱</h3>
+  <input type="text" id="coordName" placeholder="例如：板橋文化路 A 區">
+  <div class="btnrow"><button class="btn" data-close>取消</button><button class="btn primary" id="coordSave">建立區塊</button></div>
+</section>
+
+<section class="sheet" id="shName">
+  <div class="grab"></div>
+  <h2 id="nameTitle">區塊名稱</h2>
+  <input type="text" id="nameInput" placeholder="例如：板橋文化路 A 區">
+  <div class="btnrow"><button class="btn" data-close>取消</button><button class="btn primary" id="nameOk">儲存</button></div>
+</section>
+
+<section class="sheet" id="shMark">
+  <div class="grab"></div>
+  <h2>標記這一戶</h2>
+  <p class="note">會記在你目前的位置，下次經過時語音提醒。</p>
+  <div class="marks">
+    <button data-mark="refuse"><span>🚫</span>拒收廣告</button>
+    <button data-mark="nobox"><span>📭</span>沒有信箱</button>
+    <button data-mark="dog"><span>🐕</span>有狗</button>
+    <button data-mark="other"><span>📌</span>其他</button>
+  </div>
+  <input type="text" id="markNote" placeholder="備註（可不填）">
+  <div class="btnrow"><button class="btn full" data-close>取消</button></div>
+</section>
+
+<section class="sheet" id="shFix">
+  <div class="grab"></div>
+  <h2>修正位置</h2>
+  <p class="note">GPS 跑掉時，告訴我你在哪裡。可以說或打門牌，例如「中山路一段 120 巷 5 號」，或巷名加「口」，例如「中山路一段 120 巷口」。</p>
+  <div class="btnrow"><button class="btn primary full" id="fixTap">在地圖上點選位置</button></div>
+  <h3>門牌或巷名</h3>
+  <input type="text" id="fixText" placeholder="中山路一段120巷5號">
+  <div class="btnrow"><button class="btn" id="fixVoice">用說的</button><button class="btn primary" id="fixGo">修正</button><button class="btn" id="fixClear">取消修正，改回 GPS</button></div>
+</section>
+
+<section class="sheet" id="shLayer">
+  <div class="grab"></div>
+  <h2>地圖</h2>
+  <div class="btnrow" id="layerBtns">
+    <button class="btn" data-layer="osm">開放街圖</button>
+    <button class="btn" data-layer="emap">國土測繪電子地圖</button>
+    <button class="btn" data-layer="photo">空照圖</button>
+  </div>
+  <div class="set"><label>在地圖上顯示門牌號碼<small>放大到最近時才會出現</small></label><div class="sw"><input type="checkbox" data-set="showAddr"><span></span></div></div>
+</section>
+
+<section class="sheet" id="shSettings">
+  <div class="grab"></div>
+  <h2>設定</h2>
+  <h3>語音播報</h3>
+  <div class="set col"><div class="top"><label>預告距離<small>例如「前方 30 公尺右轉」，設 0 就不預告</small></label><span class="val" data-show="preDist"></span></div><input type="range" min="0" max="80" step="5" data-set="preDist"></div>
+  <div class="set col"><div class="top"><label>轉彎提醒距離<small>例如「10 公尺後右轉」</small></label><span class="val" data-show="nearDist"></span></div><input type="range" min="5" max="30" step="1" data-set="nearDist"></div>
+  <div class="set col"><div class="top"><label>直走時定時提醒<small>每隔多久說一次下個轉彎還有多遠</small></label></div>
+    <select data-set="periodic"><option value="0">不提醒</option><option value="20">每 20 秒</option><option value="30">每 30 秒</option><option value="60">每 1 分鐘</option><option value="120">每 2 分鐘</option></select></div>
+  <div class="set col"><div class="top"><label>說話速度</label><span class="val" data-show="rate"></span></div><input type="range" min="0.7" max="1.5" step="0.05" data-set="rate"></div>
+  <div class="btnrow"><button class="btn" id="ttsTest">試聽語音</button></div>
+  <h3>定位</h3>
+  <div class="set col"><div class="top"><label>GPS 誤差上限<small>誤差比這個大的定位會被忽略</small></label><span class="val" data-show="maxAcc"></span></div><input type="range" min="15" max="80" step="5" data-set="maxAcc"></div>
+  <div class="set col"><div class="top"><label>偏離路線判定<small>離路線超過這個距離就重新規劃</small></label><span class="val" data-show="offRoute"></span></div><input type="range" min="15" max="60" step="5" data-set="offRoute"></div>
+  <h3>路線</h3>
+  <div class="set"><label>派完要回到起點</label><div class="sw"><input type="checkbox" data-set="returnToStart"><span></span></div></div>
+  <div class="set"><label>包含步道和樓梯<small>改了之後要重新下載圖資</small></label><div class="sw"><input type="checkbox" data-set="includePaths"><span></span></div></div>
+  <h3>耳機</h3>
+  <div class="set"><label>用耳機按鍵操作<small>按一下：重複提示；下一首：說指令（試驗中）</small></label><div class="sw"><input type="checkbox" data-set="earBtn"><span></span></div></div>
+  <h3>資料</h3>
+  <p class="note">區塊、派報進度和標記都存在這支手機的 Safari 裡。清除 Safari 網站資料會一起刪掉。</p>
+  <div class="btnrow"><button class="btn danger" id="wipeAll">刪除所有資料</button></div>
+</section>
+
+<div id="toast" role="status"></div>
+<div id="busy"><div><span class="spin"></span><span id="busyText">處理中</span></div></div>
+<div class="listen" id="listen"><div class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div><p id="listenText">請說指令</p><small>暫停、繼續、重複、跳過、重新規劃、進度、標記有狗、我在○○巷○號</small></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ===== 派報系統 核心邏輯（無畫面相依，可單獨測試） ===== */
+const Core = (() => {
+  const R = 6371000, D2R = Math.PI / 180;
+
+  /* ---------- 幾何 ---------- */
+  function dist(a, b) {
+    const dLat = (b[0] - a[0]) * D2R, dLon = (b[1] - a[1]) * D2R;
+    const x = dLon * Math.cos(((a[0] + b[0]) / 2) * D2R);
+    return Math.sqrt(x * x + dLat * dLat) * R;
+  }
+  function bearing(a, b) {
+    const x = (b[1] - a[1]) * Math.cos(((a[0] + b[0]) / 2) * D2R);
+    const y = b[0] - a[0];
+    return (Math.atan2(x, y) / D2R + 360) % 360;
+  }
+  function angDiff(a, b) { let d = (b - a) % 360; if (d > 180) d -= 360; if (d <= -180) d += 360; return d; }
+  // 點 p 投影到線段 ab
+  function projSeg(p, a, b) {
+    const k = Math.cos(p[0] * D2R);
+    const ax = a[1] * k, ay = a[0], bx = b[1] * k, by = b[0], px = p[1] * k, py = p[0];
+    const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+    let t = L2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / L2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const q = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    return { t, q, d: dist(p, q) };
+  }
+  function pointInPoly(p, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const yi = poly[i][0], xi = poly[i][1], yj = poly[j][0], xj = poly[j][1];
+      if ((yi > p[0]) !== (yj > p[0]) && p[1] < ((xj - xi) * (p[0] - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  function polyLength(coords) { let s = 0; for (let i = 1; i < coords.length; i++) s += dist(coords[i - 1], coords[i]); return s; }
+  function pointAlong(coords, d) {
+    let s = 0;
+    for (let i = 1; i < coords.length; i++) {
+      const l = dist(coords[i - 1], coords[i]);
+      if (s + l >= d) { const t = l ? (d - s) / l : 0; return [coords[i - 1][0] + (coords[i][0] - coords[i - 1][0]) * t, coords[i - 1][1] + (coords[i][1] - coords[i - 1][1]) * t]; }
+      s += l;
+    }
+    return coords[coords.length - 1];
+  }
+  function bbox(poly, padM = 0) {
+    let s = 90, w = 180, n = -90, e = -180;
+    for (const p of poly) { s = Math.min(s, p[0]); n = Math.max(n, p[0]); w = Math.min(w, p[1]); e = Math.max(e, p[1]); }
+    const dLat = padM / 111320, dLon = padM / (111320 * Math.cos(((s + n) / 2) * D2R));
+    return [s - dLat, w - dLon, n + dLat, e + dLon];
+  }
+
+  /* ---------- 文字 ---------- */
+  const CN = { 零: 0, 〇: 0, 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+  const CNU = { 十: 10, 百: 100, 千: 1000 };
+  function cnToNum(str) {
+    if (/^[零〇一二兩三四五六七八九]+$/.test(str) && str.length > 1 && !/[十百千]/.test(str))
+      return Number([...str].map(c => CN[c]).join(''));
+    let total = 0, cur = 0;
+    for (const c of str) {
+      if (c in CN) cur = CN[c];
+      else if (c in CNU) { total += (cur || 1) * CNU[c]; cur = 0; }
+    }
+    return total + cur;
+  }
+  function norm(s) {
+    if (!s) return '';
+    s = String(s).replace(/[\uFF10-\uFF19]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFF10 + 48));
+    s = s.replace(/[零〇一二兩三四五六七八九十百千]+(?=[巷弄號之樓衖])/g, m => String(cnToNum(m)));
+    s = s.replace(/臺/g, '台').replace(/[\s,，。、．.!！?？]/g, '');
+    return s;
+  }
+  // 段數保留國字（OSM 慣用「一段」），把「1段」轉回國字
+  function normRoad(s) {
+    s = norm(s);
+    return s.replace(/(\d)段/g, (m, d) => '零一二三四五六七八九'[d] + '段');
+  }
+
+  /* ---------- 圖資 → 路網 ---------- */
+  const SKIP_HW = new Set(['motorway', 'motorway_link', 'trunk', 'trunk_link', 'construction', 'proposed', 'platform', 'bus_stop', 'raceway', 'corridor', 'elevator', 'escape', 'rest_area', 'services', 'abandoned', 'razed', 'via_ferrata', 'bus_guideway']);
+  function isRequiredType(w, opts) {
+    if (w.fw === 'sidewalk' || w.fw === 'crossing' || w.fw === 'traffic_island') return false;
+    if (w.svc === 'parking_aisle' || w.svc === 'drive-through' || w.svc === 'emergency_access') return false;
+    if (w.hw === 'cycleway' || w.hw === 'bridleway') return false;
+    if (!opts.includePaths && (w.hw === 'footway' || w.hw === 'path' || w.hw === 'steps' || w.hw === 'track')) return false;
+    return true;
+  }
+
+  function buildNetwork(raw, poly, opts = {}) {
+    opts = Object.assign({ includePaths: true, sampleStep: 8 }, opts);
+    const nodes = raw.nodes; // id -> [lat,lon]
+    const ways = raw.ways.filter(w => !SKIP_HW.has(w.hw) && w.n && w.n.length > 1);
+    const segs = []; // {a,b,w}
+    const inc = new Map(); // node -> [segIdx]
+    const addInc = (n, i) => { let l = inc.get(n); if (!l) inc.set(n, l = []); l.push(i); };
+    ways.forEach((w, wi) => {
+      for (let i = 1; i < w.n.length; i++) {
+        const a = w.n[i - 1], b = w.n[i];
+        if (a === b || !nodes[a] || !nodes[b]) continue;
+        segs.push({ a, b, w: wi }); addInc(a, segs.length - 1); addInc(b, segs.length - 1);
+      }
+    });
+    const isJ = new Set();
+    for (const [n, l] of inc) {
+      if (l.length !== 2) { isJ.add(n); continue; }
+      const w1 = ways[segs[l[0]].w], w2 = ways[segs[l[1]].w];
+      if (w1 !== w2 && (w1.name || '') !== (w2.name || '')) isJ.add(n);
+    }
+    const used = new Uint8Array(segs.length);
+    const chains = [];
+    const walk = (start, si) => {
+      const ns = [start], ws = new Map();
+      let cur = start, s = si;
+      for (;;) {
+        used[s] = 1;
+        const sg = segs[s], nx = sg.a === cur ? sg.b : sg.a;
+        const w = ways[sg.w];
+        const l = dist(nodes[cur], nodes[nx]);
+        ws.set(sg.w, (ws.get(sg.w) || 0) + l);
+        ns.push(nx); cur = nx;
+        if (isJ.has(cur)) break;
+        const nxt = inc.get(cur).find(k => !used[k]);
+        if (nxt === undefined) { isJ.add(cur); break; }
+        s = nxt;
+      }
+      let best = -1, bl = -1;
+      for (const [wi, l] of ws) if (l > bl) { bl = l; best = wi; }
+      const w = ways[best];
+      const coords = ns.map(id => nodes[id]);
+      const len = polyLength(coords);
+      const mid = pointAlong(coords, len / 2);
+      const inside = poly ? pointInPoly(mid, poly) : true;
+      const c = {
+        i: chains.length, a: ns[0], b: ns[ns.length - 1], nodes: ns, coords, len,
+        name: w.name || '', wayId: w.id, hw: w.hw,
+        req: inside && isRequiredType(w, opts),
+        key: ns[0] < ns[ns.length - 1] || (ns[0] === ns[ns.length - 1] && ns[1] < ns[ns.length - 2])
+          ? ns[0] + '-' + ns[1] + '-' + ns[ns.length - 1] : ns[ns.length - 1] + '-' + ns[ns.length - 2] + '-' + ns[0],
+      };
+      // 取樣點：判斷是否走過
+      const k = Math.max(1, Math.round(len / opts.sampleStep));
+      c.samples = [];
+      for (let j = 0; j < k; j++) c.samples.push(pointAlong(coords, ((j + 0.5) / k) * len));
+      chains.push(c);
+    };
+    for (const n of isJ) for (const si of inc.get(n)) if (!used[si]) walk(n, si);
+    // 純環狀道路（沒有路口）
+    for (let si = 0; si < segs.length; si++) if (!used[si]) { isJ.add(segs[si].a); walk(segs[si].a, si); }
+
+    // 壓縮後的路口圖
+    const jIds = [...new Set(chains.flatMap(c => [c.a, c.b]))];
+    const jIndex = new Map(jIds.map((id, i) => [id, i]));
+    const adj = jIds.map(() => []);
+    for (const c of chains) {
+      c.ia = jIndex.get(c.a); c.ib = jIndex.get(c.b);
+      adj[c.ia].push(c.i);
+      adj[c.ib].push(c.i);
+    }
+    const jPos = jIds.map(id => nodes[id]);
+    const net = { chains, jIds, jPos, adj, poly, addrs: raw.addrs || [], grid: null };
+    buildGrid(net);
+    return net;
+  }
+
+  /* ---------- 空間索引 ---------- */
+  const CELL = 0.0005; // 約 50 公尺
+  const cellKey = (lat, lon) => Math.floor(lat / CELL) + ':' + Math.floor(lon / CELL);
+  function buildGrid(net) {
+    const g = new Map();
+    for (const c of net.chains) {
+      const keys = new Set();
+      const pts = c.coords.concat(c.samples);
+      for (const p of pts) keys.add(cellKey(p[0], p[1]));
+      for (const k of keys) { let l = g.get(k); if (!l) g.set(k, l = []); l.push(c.i); }
+    }
+    net.grid = g;
+  }
+  function chainsNear(net, p, rM) {
+    const r = Math.ceil(rM / 50) + 1, ci = Math.floor(p[0] / CELL), cj = Math.floor(p[1] / CELL);
+    const out = new Set();
+    for (let i = -r; i <= r; i++) for (let j = -r; j <= r; j++) {
+      const l = net.grid.get((ci + i) + ':' + (cj + j)); if (l) for (const x of l) out.add(x);
+    }
+    return [...out];
+  }
+  // 找最近的街道（回傳 chain、投影點、沿線距離）
+  function nearestChain(net, p, maxM = 400, filter) {
+    let best = null;
+    let cand = chainsNear(net, p, Math.min(maxM, 150));
+    if (!cand.length) cand = net.chains.map(c => c.i);
+    for (const ci of cand) {
+      const c = net.chains[ci];
+      if (filter && !filter(c)) continue;
+      let along = 0;
+      for (let k = 1; k < c.coords.length; k++) {
+        const pr = projSeg(p, c.coords[k - 1], c.coords[k]);
+        const segL = dist(c.coords[k - 1], c.coords[k]);
+        if (!best || pr.d < best.d) best = { c: ci, d: pr.d, q: pr.q, along: along + pr.t * segL };
+        along += segL;
+      }
+    }
+    return best && best.d <= maxM ? best : null;
+  }
+
+  /* ---------- 走過的街道 ---------- */
+  function markVisits(net, p, rM, hits, covered, thresh = 0.7) {
+    const newly = [];
+    for (const ci of chainsNear(net, p, rM)) {
+      const c = net.chains[ci];
+      if (!c.req || covered.has(c.key)) continue;
+      let h = hits.get(c.key); if (!h) hits.set(c.key, h = new Uint8Array(c.samples.length));
+      let changed = false;
+      for (let k = 0; k < c.samples.length; k++) if (!h[k] && dist(p, c.samples[k]) <= rM) { h[k] = 1; changed = true; }
+      if (changed) {
+        let n = 0; for (const x of h) n += x;
+        if (n / h.length >= thresh) { covered.add(c.key); newly.push(ci); }
+      }
+    }
+    return newly;
+  }
+
+  /* ---------- 最短路徑 ---------- */
+  class Heap {
+    constructor() { this.k = []; this.v = []; }
+    push(key, val) {
+      const k = this.k, v = this.v; let i = k.length; k.push(key); v.push(val);
+      while (i > 0) { const p = (i - 1) >> 1; if (k[p] <= key) break; k[i] = k[p]; v[i] = v[p]; i = p; }
+      k[i] = key; v[i] = val;
+    }
+    pop() {
+      const k = this.k, v = this.v, top = v[0], lk = k.pop(), lv = v.pop(), n = k.length;
+      if (n) {
+        let i = 0;
+        for (;;) {
+          let c = 2 * i + 1; if (c >= n) break;
+          if (c + 1 < n && k[c + 1] < k[c]) c++;
+          if (k[c] >= lk) break;
+          k[i] = k[c]; v[i] = v[c]; i = c;
+        }
+        k[i] = lk; v[i] = lv;
+      }
+      return top;
+    }
+    get size() { return this.k.length; }
+  }
+  // 多起點 Dijkstra；stopFn(node) 回傳 true 即停止
+  function dijkstra(net, sources, stopFn) {
+    const n = net.jIds.length;
+    const d = new Float64Array(n).fill(Infinity), prevC = new Int32Array(n).fill(-1), done = new Uint8Array(n);
+    const h = new Heap();
+    for (const s of sources) { d[s] = 0; h.push(0, s); }
+    let hit = -1;
+    while (h.size) {
+      const u = h.pop(); if (done[u]) continue; done[u] = 1;
+      if (stopFn && stopFn(u)) { hit = u; break; }
+      for (const ci of net.adj[u]) {
+        const c = net.chains[ci], v = c.ia === u ? c.ib : c.ia, nd = d[u] + c.len;
+        if (nd < d[v]) { d[v] = nd; prevC[v] = ci; h.push(nd, v); }
+      }
+    }
+    return { d, prevC, hit };
+  }
+  function tracePath(net, prevC, target) {
+    const path = []; let v = target;
+    while (prevC[v] !== -1) { const c = net.chains[prevC[v]]; path.push(prevC[v]); v = c.ia === v ? c.ib : c.ia; }
+    return path.reverse();
+  }
+
+  // 圖資缺漏時的「直線連接」虛擬路段
+  function addVirtual(net, a, b) {
+    const ex = net.chains.find(c => c.virtual && ((c.ia === a && c.ib === b) || (c.ia === b && c.ib === a)));
+    if (ex) return ex.i;
+    const coords = [net.jPos[a], net.jPos[b]];
+    const c = { i: net.chains.length, a: net.jIds[a], b: net.jIds[b], ia: a, ib: b, nodes: [net.jIds[a], net.jIds[b]], coords, len: dist(coords[0], coords[1]) * 1.3, name: '', wayId: 0, hw: 'virtual', req: false, virtual: true, key: 'v' + a + '-' + b, samples: [] };
+    net.chains.push(c); net.adj[a].push(c.i); net.adj[b].push(c.i);
+    return c.i;
+  }
+
+  /* ---------- 路線規劃（走遍所有待派街道） ---------- */
+  function planRoute(net, reqChains, start, opts = {}) {
+    if (!reqChains.length) return null;
+    const n = net.jIds.length;
+    // 起點：離目前位置最近的路口
+    let s;
+    const nc = nearestChain(net, start, 2000);
+    if (nc) { const c = net.chains[nc.c]; s = nc.along <= c.len / 2 ? c.ia : c.ib; }
+    else s = reqChains.map(ci => net.chains[ci].ia)[0];
+
+    const inst = []; // {c, dead}
+    const deg = new Int32Array(n);
+    const addInst = (ci, dead) => { const c = net.chains[ci]; inst.push({ c: ci, dead }); deg[c.ia]++; deg[c.ib]++; };
+    for (const ci of reqChains) addInst(ci, false);
+
+    // 1) 把分散的區域連起來（Prim）
+    const parent = new Int32Array(n).map((_, i) => i);
+    const find = x => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+    const unite = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[a] = b; };
+    const touched = new Set([s]);
+    for (const ci of reqChains) { const c = net.chains[ci]; unite(c.ia, c.ib); touched.add(c.ia); touched.add(c.ib); }
+    const treeRoot = () => find(s);
+    for (let guard = 0; guard < 5000; guard++) {
+      const tr = treeRoot();
+      const tree = [], others = new Set();
+      for (const v of touched) { if (find(v) === tr) tree.push(v); else others.add(v); }
+      if (!others.size) break;
+      const r = dijkstra(net, tree, u => others.has(u));
+      if (r.hit < 0) { // 圖資上沒有路相連：用直線（步行穿越）接起來
+        let best = null;
+        for (const a of tree) for (const b of others) {
+          const d = dist(net.jPos[a], net.jPos[b]);
+          if (!best || d < best.d) best = { a, b, d };
+        }
+        const ci = addVirtual(net, best.a, best.b);
+        addInst(ci, true); unite(best.a, best.b);
+        continue;
+      }
+      for (const ci of tracePath(net, r.prevC, r.hit)) { addInst(ci, true); const c = net.chains[ci]; unite(c.ia, c.ib); touched.add(c.ia); touched.add(c.ib); }
+      unite(r.hit, s);
+    }
+    if (!inst.length) return null;
+
+    // 2) 奇數度路口配對（中國郵差問題）
+    const oddSet = new Set();
+    for (let v = 0; v < n; v++) if (deg[v] % 2) oddSet.add(v);
+    if (!opts.returnToStart) { if (oddSet.has(s)) oddSet.delete(s); else oddSet.add(s); }
+    const odd = [...oddSet];
+    const k = odd.length;
+    if (k) {
+      const idx = new Map(odd.map((v, i) => [v, i]));
+      const D = new Float64Array(k * k), prevs = [];
+      for (let i = 0; i < k; i++) {
+        let remain = k - 1;
+        const r = dijkstra(net, [odd[i]], u => idx.has(u) && u !== odd[i] && --remain <= 0);
+        for (let j = 0; j < k; j++) D[i * k + j] = r.d[odd[j]];
+        prevs.push(r.prevC);
+      }
+      // 貪婪配對
+      const pairs = [];
+      for (let i = 0; i < k; i++) for (let j = i + 1; j < k; j++) pairs.push([D[i * k + j], i, j]);
+      pairs.sort((a, b) => a[0] - b[0]);
+      const mate = new Int32Array(k).fill(-1);
+      for (const [d, i, j] of pairs) if (mate[i] < 0 && mate[j] < 0 && isFinite(d)) { mate[i] = j; mate[j] = i; }
+      // 若是一筆畫終點不固定，剩一個不配對
+      // 2-opt 改善
+      const cost = (i, j) => (i < 0 || j < 0) ? 0 : D[i * k + j];
+      for (let pass = 0; pass < 6; pass++) {
+        let improved = false;
+        for (let a = 0; a < k; a++) for (let c = a + 1; c < k; c++) {
+          const b = mate[a], d = mate[c];
+          if (b === c || (b < 0 && d < 0)) continue;
+          if (b >= 0 && b < a && d >= 0) continue; // 每組只檢查一次
+          const cur = cost(a, b) + cost(c, d);
+          if (b >= 0 && d >= 0) {
+            if (cost(a, c) + cost(b, d) < cur - 0.5) { mate[a] = c; mate[c] = a; mate[b] = d; mate[d] = b; improved = true; }
+            else if (cost(a, d) + cost(b, c) < cur - 0.5) { mate[a] = d; mate[d] = a; mate[b] = c; mate[c] = b; improved = true; }
+          } else if (b >= 0 && d < 0) { // c 未配對
+            if (cost(c, b) < cur - 0.5) { mate[c] = b; mate[b] = c; mate[a] = -1; improved = true; }
+            else if (cost(c, a) < cur - 0.5) { mate[c] = a; mate[a] = c; mate[b] = -1; improved = true; }
+          } else if (b < 0 && d >= 0) {
+            if (cost(a, d) < cur - 0.5) { mate[a] = d; mate[d] = a; mate[c] = -1; improved = true; }
+            else if (cost(a, c) < cur - 0.5) { mate[a] = c; mate[c] = a; mate[d] = -1; improved = true; }
+          }
+        }
+        if (!improved) break;
+      }
+      for (let i = 0; i < k; i++) {
+        const j = mate[i]; if (j < 0 || j < i) continue;
+        if (!isFinite(D[i * k + j])) continue;
+        for (const ci of tracePath(net, prevs[i], odd[j])) addInst(ci, true);
+      }
+    }
+
+    // 3) 一筆畫（Hierholzer）
+    const nadj = new Map();
+    inst.forEach((it, i) => {
+      const c = net.chains[it.c];
+      for (const v of [c.ia, c.ib]) { let l = nadj.get(v); if (!l) nadj.set(v, l = []); l.push(i); }
+    });
+    // 優先走需要派的街道，減少空走
+    for (const l of nadj.values()) l.sort((x, y) => (inst[x].dead - inst[y].dead));
+    const usedI = new Uint8Array(inst.length), ptr = new Map();
+    const stN = [s], stE = [-1], stF = [-1], out = [];
+    while (stN.length) {
+      const v = stN[stN.length - 1], l = nadj.get(v) || [];
+      let p = ptr.get(v) || 0;
+      while (p < l.length && usedI[l[p]]) p++;
+      ptr.set(v, p);
+      if (p < l.length) {
+        const e = l[p]; usedI[e] = 1;
+        const c = net.chains[inst[e].c];
+        const w = c.ia === v ? c.ib : c.ia;
+        stN.push(w); stE.push(e); stF.push(v);
+      } else {
+        stN.pop(); const e = stE.pop(), f = stF.pop();
+        if (e >= 0) out.push({ e, from: f });
+      }
+    }
+    out.reverse();
+    const steps = out.map(({ e, from }) => {
+      const c = net.chains[inst[e].c];
+      return { c: c.i, fwd: c.ia === from, dead: inst[e].dead };
+    });
+    return expandRoute(net, steps, s);
+  }
+
+  function expandRoute(net, steps, s) {
+    const coords = [net.jPos[s]], cum = [0];
+    for (const st of steps) {
+      const c = net.chains[st.c];
+      const cc = st.fwd ? c.coords : c.coords.slice().reverse();
+      st.i0 = coords.length - 1;
+      for (let k = 1; k < cc.length; k++) { cum.push(cum[cum.length - 1] + dist(coords[coords.length - 1], cc[k])); coords.push(cc[k]); }
+      st.i1 = coords.length - 1;
+      st.d0 = cum[st.i0]; st.d1 = cum[st.i1];
+      st.from = st.fwd ? c.ia : c.ib; st.to = st.fwd ? c.ib : c.ia;
+    }
+    const route = { steps, coords, cum, total: cum[cum.length - 1], start: s };
+    route.maneuvers = buildManeuvers(net, route);
+    return route;
+  }
+
+  /* ---------- 轉彎提示 ---------- */
+  function pointAtRoute(route, d) {
+    const { cum, coords } = route;
+    d = Math.max(0, Math.min(route.total, d));
+    let lo = 0, hi = cum.length - 1;
+    while (lo < hi - 1) { const m = (lo + hi) >> 1; if (cum[m] <= d) lo = m; else hi = m; }
+    const l = cum[hi] - cum[lo], t = l ? (d - cum[lo]) / l : 0;
+    return [coords[lo][0] + (coords[hi][0] - coords[lo][0]) * t, coords[lo][1] + (coords[hi][1] - coords[lo][1]) * t];
+  }
+  function dirWord(a) {
+    const x = Math.abs(a);
+    if (x < 25) return null;
+    if (x >= 150) return '回頭';
+    if (x < 60) return a > 0 ? '靠右' : '靠左';
+    return a > 0 ? '右轉' : '左轉';
+  }
+  function buildManeuvers(net, route) {
+    const st = route.steps, M = [];
+    const degree = v => net.adj[v].length;
+    if (!st.length) return M;
+    const first = net.chains[st[0].c];
+    M.push({ d: 0, type: 'start', dir: '出發', name: first.name, text: '開始派報' + (first.name ? '，沿著' + first.name + '走' : '') });
+    for (let k = 1; k < st.length; k++) {
+      const node = st[k].from, d = st[k].d0;
+      const prev = st[k - 1], cur = st[k];
+      const pc = net.chains[prev.c], cc = net.chains[cur.c];
+      const isU = prev.c === cur.c && prev.fwd !== cur.fwd && pc.ia !== pc.ib;
+      const pin = pointAtRoute(route, d - Math.min(12, (prev.d1 - prev.d0) * 0.9));
+      const pout = pointAtRoute(route, d + Math.min(12, (cur.d1 - cur.d0) * 0.9));
+      const here = route.coords[cur.i0];
+      const ang = isU ? 180 : angDiff(bearing(pin, here), bearing(here, pout));
+      const dg = degree(node);
+      let dir = dirWord(ang);
+      if (!dir) continue;
+      if (dg <= 2 && !isU && Math.abs(ang) < 60) continue; // 彎路不提示
+      const deadEnd = isU && dg === 1;
+      const m = { d, type: dir === '回頭' ? 'uturn' : 'turn', dir, ang, name: cc.name, k };
+      if (dir === '回頭') m.text = deadEnd ? '到底了，回頭派另一邊' : '回頭';
+      else m.text = dir + (cc.name && cc.name !== pc.name ? '，進入' + cc.name : '');
+      // 進出同一條死巷：右進左出
+      if (dir !== '回頭') {
+        let u = -1;
+        for (let j = k + 1; j < st.length; j++) { if (st[j].c === st[j - 1].c && st[j].fwd !== st[j - 1].fwd) { u = j; break; } }
+        if (u > k) {
+          const L = u - k; let ok = u + L - 1 < st.length;
+          for (let i = 0; ok && i < L; i++) { const a = st[k + i], b = st[u + L - 1 - i]; if (!(a.c === b.c && a.fwd !== b.fwd)) ok = false; }
+          if (ok) { m.inout = true; m.inLen = st[u].d0 - d; m.text += '，這條是死巷，右進左出，到底回頭'; }
+        }
+      }
+      M.push(m);
+    }
+    M.push({ d: route.total, type: 'end', dir: '完成', name: '', text: '這個區塊派完了，辛苦了' });
+    return M;
+  }
+
+  /* ---------- 導航追蹤 ---------- */
+  function createTracker(route) {
+    return { route, s: 0, offCount: 0, offSince: 0 };
+  }
+  // 回傳 {s, off, d}
+  function trackUpdate(tr, p, moveBear, speed, maxOff, maxJump = 40) {
+    const { route } = tr, { coords, cum } = route;
+    const from = tr.s - 25, to = tr.s + maxJump;
+    let lo = 0, hi = cum.length - 1;
+    while (lo < hi - 1) { const m = (lo + hi) >> 1; if (cum[m] <= Math.max(0, from)) lo = m; else hi = m; }
+    let best = null;
+    for (let i = lo; i < coords.length - 1 && cum[i] <= to; i++) {
+      const pr = projSeg(p, coords[i], coords[i + 1]);
+      const sd = cum[i] + pr.t * (cum[i + 1] - cum[i]);
+      let score = pr.d + Math.max(0, sd - tr.s - 8) * 0.15;
+      if (moveBear != null && speed > 0.6 && cum[i + 1] - cum[i] > 0.5) {
+        const sb = bearing(coords[i], coords[i + 1]);
+        if (Math.abs(angDiff(moveBear, sb)) > 100) score += 18;
+      }
+      if (!best || score < best.score) best = { score, d: pr.d, s: sd };
+    }
+    if (best && best.d <= maxOff) {
+      tr.s = Math.max(tr.s, best.s);
+      tr.offCount = 0;
+      return { s: tr.s, off: false, d: best.d };
+    }
+    tr.offCount++;
+    return { s: tr.s, off: true, d: best ? best.d : Infinity };
+  }
+  // 把位置重新對到路線（定位修正後）
+  function trackRelocate(tr, p) {
+    const { coords, cum } = tr.route;
+    let best = null;
+    for (let i = 0; i < coords.length - 1; i++) {
+      const pr = projSeg(p, coords[i], coords[i + 1]);
+      const sd = cum[i] + pr.t * (cum[i + 1] - cum[i]);
+      const score = pr.d + Math.abs(sd - tr.s) * 0.01;
+      if (!best || score < best.score) best = { score, d: pr.d, s: sd };
+    }
+    if (best) tr.s = best.s;
+    return best;
+  }
+
+  /* ---------- 語音指令 ---------- */
+  function parseCommand(text) {
+    const t = norm(text);
+    if (!t) return { cmd: 'none' };
+    if (/^(我|現在|目前)?.{0,3}(在|位置)/.test(t) && t.length > 3 && /(在|位置)(.+)/.test(t)) {
+      const m = t.match(/(?:我現在在|我目前在|我在|現在在|目前在|位置在|位置是|位置)(.+)/);
+      if (m && m[1]) return { cmd: 'locate', arg: m[1] };
+    }
+    if (/標記|記下|註記/.test(t)) {
+      let type = 'other';
+      if (/拒收|不要|不收|不投/.test(t)) type = 'refuse';
+      else if (/信箱/.test(t)) type = 'nobox';
+      else if (/狗/.test(t)) type = 'dog';
+      return { cmd: 'mark', arg: type, note: t.replace(/.*?(標記|記下|註記)/, '') };
+    }
+    if (/跳過|略過|不用派|這條不派/.test(t)) return { cmd: 'skip' };
+    if (/重新(規劃|計算|安排)|重算|重新導航/.test(t)) return { cmd: 'reroute' };
+    if (/重複|再說|再講|剛剛說什麼|再一次/.test(t)) return { cmd: 'repeat' };
+    if (/進度|剩多少|還剩|剩下|多遠/.test(t)) return { cmd: 'progress' };
+    if (/暫停|停一下|安靜|先停/.test(t)) return { cmd: 'pause' };
+    if (/繼續|開始|恢復/.test(t)) return { cmd: 'resume' };
+    if (/結束|收工/.test(t)) return { cmd: 'stop' };
+    return { cmd: 'unknown', text: t };
+  }
+
+  // 依說出的地點找座標：門牌 → 巷弄/路名
+  function resolvePlace(net, text, near) {
+    const t = norm(text).replace(/^(在|於)/, '');
+    const m = t.match(/^(.*?)(\d+(?:之\d+)?)號/);
+    if (m && net.addrs.length) {
+      const street = normRoad(m[1]), num = m[2];
+      let best = null;
+      for (const a of net.addrs) {
+        const hn = norm(a.h).replace(/號$/, '');
+        const st = normRoad(a.s || '');
+        const full = st + hn;
+        const want = street + num;
+        let ok = false;
+        if (street) ok = full === want || full.endsWith(want) || (hn === num && st && (st.endsWith(street) || street.endsWith(st)));
+        else ok = hn === num;
+        if (!ok) continue;
+        const d = near ? dist(near, [a.lat, a.lon]) : 0;
+        if (!street && d > 400) continue;
+        if (!best || d < best.d) best = { d, p: [a.lat, a.lon], label: (a.s || '') + a.h + (a.h.endsWith('號') ? '' : '號') };
+      }
+      if (best) return { p: best.p, label: best.label, kind: 'addr' };
+    }
+    // 路名 / 巷弄
+    const tt = normRoad(t.replace(/(\d+(?:之\d+)?)號.*$/, ''));
+    let bestName = '';
+    for (const c of net.chains) {
+      if (!c.name) continue;
+      const nm = normRoad(c.name);
+      if (nm.length > bestName.length && tt.includes(nm)) bestName = nm;
+    }
+    if (bestName) {
+      const corner = /口/.test(t);
+      let best = null;
+      for (const c of net.chains) {
+        if (normRoad(c.name) !== bestName) continue;
+        if (corner) {
+          for (const [v, pt] of [[c.ia, c.coords[0]], [c.ib, c.coords[c.coords.length - 1]]]) {
+            if (net.adj[v].length < 3) continue;
+            const d = near ? dist(near, pt) : 0;
+            if (!best || d < best.d) best = { d, p: pt };
+          }
+        } else {
+          for (let k = 1; k < c.coords.length; k++) {
+            const pr = near ? projSeg(near, c.coords[k - 1], c.coords[k]) : { d: 0, q: c.coords[0] };
+            if (!best || pr.d < best.d) best = { d: pr.d, p: pr.q };
+          }
+        }
+      }
+      if (best) return { p: best.p, label: bestName + (corner ? '口' : ''), kind: 'street' };
+    }
+    return null;
+  }
+
+  return {
+    dist, bearing, angDiff, projSeg, pointInPoly, polyLength, pointAlong, bbox, norm, normRoad, cnToNum,
+    buildNetwork, nearestChain, chainsNear, markVisits, dijkstra, planRoute, expandRoute, buildManeuvers,
+    pointAtRoute, createTracker, trackUpdate, trackRelocate, parseCommand, resolvePlace,
+  };
+})();
+
+
+</script>
+<script>
+(() => {
+  'use strict';
+  const C = Core;
+  const $ = s => document.querySelector(s);
+  const $$ = s => [...document.querySelectorAll(s)];
+
+  /* ---------- 儲存 ---------- */
+  const LS = {
+    get(k, d) { try { const v = localStorage.getItem('pb_' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem('pb_' + k, JSON.stringify(v)); return true; } catch (e) { toast('手機儲存空間不夠，這筆資料沒有存起來'); return false; } },
+    del(k) { try { localStorage.removeItem('pb_' + k); } catch (e) { /* 無 */ } },
+  };
+  const DEF = { preDist: 30, nearDist: 10, periodic: 0, rate: 1.0, maxAcc: 40, offRoute: 25, returnToStart: false, includePaths: true, showAddr: true, earBtn: false, layer: 'osm' };
+  const S = Object.assign({}, DEF, LS.get('settings', {}));
+  const saveSettings = () => LS.set('settings', S);
+
+  const MARK = {
+    refuse: { icon: '🚫', label: '拒收廣告', say: '這戶拒收廣告，不要投' },
+    nobox: { icon: '📭', label: '沒有信箱', say: '這戶沒有信箱' },
+    dog: { icon: '🐕', label: '有狗', say: '注意，這戶有狗' },
+    other: { icon: '📌', label: '其他', say: '這裡有註記' },
+  };
+
+  const st = {
+    blocks: LS.get('blocks', []),
+    marks: LS.get('marks', []),
+    block: null, net: null,
+    covered: new Set(), skipped: new Set(), hits: new Map(),
+    mode: 'idle', follow: true,
+  };
+  const gps = { raw: null, fix: null, kf: null, corr: null, hist: [], bear: null, speed: 0, watch: null, lastGood: 0 };
+  let nav = null;
+
+  /* ---------- 小工具 ---------- */
+  let toastT;
+  function toast(msg, ms = 2800) {
+    const t = $('#toast'); t.textContent = msg; t.style.display = 'block';
+    clearTimeout(toastT); toastT = setTimeout(() => (t.style.display = 'none'), ms);
+  }
+  function busy(on, text) { $('#busy').style.display = on ? 'flex' : 'none'; if (text) $('#busyText').textContent = text; }
+  const nextFrame = () => new Promise(r => setTimeout(r, 30));
+  const r5 = d => Math.max(5, Math.round(d / 5) * 5);
+  const r10 = d => Math.max(10, Math.round(d / 10) * 10);
+  const fmtDist = m => m >= 1000 ? (m / 1000).toFixed(1) + ' 公里' : Math.round(m) + ' 公尺';
+  const sayDist = m => m >= 1000 ? (m / 1000).toFixed(1) + '公里' : r10(m) + '公尺';
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function setMode(m) {
+    st.mode = m;
+    document.body.className = 'mode-' + m;
+    map.getContainer().style.cursor = (m === 'draw' || m === 'pick' || m === 'edit') ? 'crosshair' : '';
+  }
+
+  /* ---------- 地圖 ---------- */
+  const map = L.map('map', { zoomControl: false, preferCanvas: true, maxZoom: 21, attributionControl: true }).setView([25.0137, 121.4627], 16);
+  const tiles = {
+    osm: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 19, attribution: '© OpenStreetMap 貢獻者' }),
+    emap: L.tileLayer('https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, attribution: '© 內政部國土測繪中心' }),
+    photo: L.tileLayer('https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, attribution: '© 內政部國土測繪中心' }),
+  };
+  let curTile = null;
+  function setLayer(k) {
+    if (!tiles[k]) k = 'osm';
+    if (curTile) map.removeLayer(curTile);
+    curTile = tiles[k].addTo(map); curTile.bringToBack();
+    S.layer = k; saveSettings();
+    $$('#layerBtns .btn').forEach(b => b.classList.toggle('primary', b.dataset.layer === k));
+  }
+  const cv = L.canvas({ padding: 0.4 });
+  const L_blocks = L.layerGroup().addTo(map);
+  const L_net = L.layerGroup().addTo(map);
+  const L_route = L.layerGroup().addTo(map);
+  const L_addr = L.layerGroup().addTo(map);
+  const L_marks = L.layerGroup().addTo(map);
+  const L_draw = L.layerGroup().addTo(map);
+  const L_me = L.layerGroup().addTo(map);
+  let chainLines = [];
+
+  map.on('dragstart', () => { if (st.follow) { st.follow = false; $('#fabFollow').classList.remove('on'); } });
+
+  /* ---------- 區塊 ---------- */
+  function saveBlocks() { LS.set('blocks', st.blocks); }
+  function renderBlocks() {
+    L_blocks.clearLayers();
+    for (const b of st.blocks) {
+      if (!b.show) continue;
+      const cur = st.block && st.block.id === b.id;
+      L.polygon(b.poly, { renderer: cv, color: cur ? '#1F4E9E' : '#56657A', weight: cur ? 3 : 2, dashArray: '8 6', fillColor: '#1F4E9E', fillOpacity: cur ? 0.05 : 0.02, interactive: false }).addTo(L_blocks);
+    }
+    $('#blockName').textContent = st.block ? st.block.name + (st.net ? '　' + pct() + '%' : '') : '還沒有區塊';
+  }
+  function reqChains() { return st.net ? st.net.chains.filter(c => c.req) : []; }
+  function isDone(c) { return st.covered.has(c.key) || st.skipped.has(c.key); }
+  function progressNums() {
+    let all = 0, done = 0;
+    for (const c of reqChains()) { all += c.len; if (isDone(c)) done += c.len; }
+    return { all, done, left: all - done };
+  }
+  function pct() { const p = progressNums(); return p.all ? Math.floor((p.done / p.all) * 100) : 0; }
+  let progT;
+  function saveProgress(now) {
+    if (!st.block) return;
+    const go = () => LS.set('prog_' + st.block.id, { c: [...st.covered], s: [...st.skipped] });
+    clearTimeout(progT);
+    if (now) go(); else progT = setTimeout(go, 3000);
+  }
+  function loadProgress() {
+    const p = LS.get('prog_' + st.block.id, { c: [], s: [] });
+    st.covered = new Set(p.c); st.skipped = new Set(p.s); st.hits = new Map();
+  }
+
+  function selectBlock(id, fit = true) {
+    const b = st.blocks.find(x => x.id === id);
+    if (!b) return;
+    st.block = b; b.show = true; saveBlocks();
+    LS.set('curBlock', id);
+    loadProgress();
+    const raw = LS.get('net_' + id, null);
+    st.net = raw ? C.buildNetwork(raw, b.poly, { includePaths: S.includePaths }) : null;
+    renderBlocks(); renderNet(); renderAddrs();
+    if (fit) map.fitBounds(L.latLngBounds(b.poly), { padding: [30, 30] });
+    if (!raw) downloadNet();
+  }
+  function createBlock(poly, name) {
+    const b = { id: uid(), name: name || '區塊 ' + (st.blocks.length + 1), poly, show: true, t: Date.now() };
+    st.blocks.push(b); saveBlocks();
+    selectBlock(b.id);
+  }
+  function deleteBlock(id) {
+    st.blocks = st.blocks.filter(b => b.id !== id); saveBlocks();
+    LS.del('net_' + id); LS.del('prog_' + id);
+    if (st.block && st.block.id === id) { st.block = null; st.net = null; LS.del('curBlock'); renderNet(); renderAddrs(); }
+    renderBlocks();
+  }
+
+  /* ---------- 下載圖資（OpenStreetMap / Overpass） ---------- */
+  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+  async function downloadNet() {
+    const b = st.block; if (!b) return;
+    const [s, w, n, e] = C.bbox(b.poly, 200);
+    const pl = b.poly.map(p => p[0].toFixed(6) + ' ' + p[1].toFixed(6)).join(' ');
+    const q = `[out:json][timeout:90];way["highway"](${s},${w},${n},${e})->.r;.r out body;node(w.r);out skel qt;nwr["addr:housenumber"](poly:"${pl}");out center tags;`;
+    busy(true, '下載街道和門牌資料中…');
+    let data = null, lastErr = '';
+    for (const url of OVERPASS) {
+      try {
+        const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 60000);
+        const res = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: ctl.signal });
+        clearTimeout(tm);
+        if (!res.ok) { lastErr = '伺服器回應 ' + res.status; continue; }
+        data = await res.json(); break;
+      } catch (err) { lastErr = err.name === 'AbortError' ? '連線逾時' : '網路連不上'; }
+    }
+    busy(false);
+    if (!data) { toast('下載圖資失敗（' + lastErr + '）。確認網路後，到「我的區塊」按「重新下載圖資」。', 5000); return; }
+    const raw = { nodes: {}, ways: [], addrs: [] };
+    for (const el of data.elements) {
+      if (el.type === 'node' && el.lat != null) raw.nodes[el.id] = [+el.lat.toFixed(7), +el.lon.toFixed(7)];
+      const t = el.tags;
+      if (!t) continue;
+      if (el.type === 'way' && t.highway && el.nodes) raw.ways.push({ id: el.id, n: el.nodes, name: t.name || t['name:zh'] || '', hw: t.highway, svc: t.service, fw: t.footway });
+      if (t['addr:housenumber']) {
+        const lat = el.lat != null ? el.lat : el.center && el.center.lat, lon = el.lon != null ? el.lon : el.center && el.center.lon;
+        if (lat != null) raw.addrs.push({ lat: +lat.toFixed(7), lon: +lon.toFixed(7), s: t['addr:street'] || t['addr:place'] || '', h: t['addr:housenumber'] });
+      }
+    }
+    if (st.block !== b) return;
+    LS.set('net_' + b.id, raw);
+    st.net = C.buildNetwork(raw, b.poly, { includePaths: S.includePaths });
+    renderNet(); renderAddrs(); renderBlocks();
+    const nReq = reqChains().length;
+    if (!nReq) toast('這個區塊裡找不到街道。試著把框框畫大一點。', 4500);
+    else toast(`載入完成：${nReq} 段街道、${raw.addrs.length} 個門牌`);
+  }
+
+  /* ---------- 路網顯示 ---------- */
+  function chainStyle(c) {
+    if (!c.req) return { color: '#7D8796', weight: 2, opacity: 0.45, dashArray: null };
+    if (st.covered.has(c.key)) return { color: '#2E9E5B', weight: 5, opacity: 0.9, dashArray: null };
+    if (st.skipped.has(c.key)) return { color: '#AEB6C1', weight: 4, opacity: 0.9, dashArray: '4 7' };
+    return { color: '#F28C28', weight: 5, opacity: 0.92, dashArray: null };
+  }
+  function renderNet() {
+    L_net.clearLayers(); chainLines = [];
+    if (!st.net) return;
+    for (const c of st.net.chains) if (!c.virtual) chainLines[c.i] = L.polyline(c.coords, Object.assign({ renderer: cv, interactive: false, lineCap: 'round' }, chainStyle(c))).addTo(L_net);
+  }
+  function restyle(ci) { const c = st.net.chains[ci]; if (c && chainLines[ci]) chainLines[ci].setStyle(chainStyle(c)); }
+
+  // 門牌號碼（放大時顯示）
+  function renderAddrs() {
+    L_addr.clearLayers();
+    if (!S.showAddr || !st.net || map.getZoom() < 18) return;
+    const bd = map.getBounds().pad(0.1); let n = 0;
+    for (const a of st.net.addrs) {
+      if (!bd.contains([a.lat, a.lon])) continue;
+      if (++n > 300) break;
+      const h = String(a.h).replace(/號$/, '');
+      L.marker([a.lat, a.lon], { interactive: false, keyboard: false, icon: L.divIcon({ className: '', html: `<span class="hn">${esc(h)}</span>`, iconSize: [0, 0] }) }).addTo(L_addr);
+    }
+  }
+  map.on('moveend zoomend', renderAddrs);
+
+  /* ---------- 標記 ---------- */
+  function renderMarks() {
+    L_marks.clearLayers();
+    for (const m of st.marks) {
+      const k = MARK[m.type] || MARK.other;
+      const mk = L.marker([m.lat, m.lon], { icon: L.divIcon({ className: '', html: `<div class="mk">${k.icon}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(L_marks);
+      mk.bindPopup(`<b>${k.label}</b>${m.note ? '<br>' + esc(m.note) : ''}<br><button class="btn sm danger" data-delmark="${m.id}" style="margin-top:8px">刪除這個標記</button>`);
+    }
+  }
+  document.addEventListener('click', e => {
+    const id = e.target && e.target.dataset && e.target.dataset.delmark;
+    if (!id) return;
+    st.marks = st.marks.filter(m => m.id !== id); LS.set('marks', st.marks); renderMarks(); map.closePopup(); toast('標記已刪除');
+  });
+  function addMark(type, note) {
+    const p = gps.fix ? [gps.fix.lat, gps.fix.lon] : [map.getCenter().lat, map.getCenter().lng];
+    st.marks.push({ id: uid(), lat: p[0], lon: p[1], type, note: note || '', t: Date.now() });
+    LS.set('marks', st.marks); renderMarks();
+    const msg = '已標記：' + (MARK[type] || MARK.other).label;
+    toast(msg); if (nav) say(msg);
+    if (nav) nav.markSaid.add(st.marks[st.marks.length - 1].id);
+  }
+
+  /* ---------- 我的位置 ---------- */
+  let meMarker = null, accCircle = null;
+  function drawMe() {
+    const f = gps.fix; if (!f) return;
+    const ll = [f.lat, f.lon];
+    if (!meMarker) {
+      accCircle = L.circle(ll, { renderer: cv, radius: f.acc, color: '#2B7BE4', weight: 1, fillOpacity: 0.08, interactive: false }).addTo(L_me);
+      meMarker = L.marker(ll, { interactive: false, keyboard: false, icon: L.divIcon({ className: '', html: '<div class="me"><div class="cone"></div></div>', iconSize: [22, 22], iconAnchor: [11, 11] }) }).addTo(L_me);
+    }
+    meMarker.setLatLng(ll); accCircle.setLatLng(ll); accCircle.setRadius(f.acc);
+    const el = meMarker.getElement();
+    if (el) {
+      const dot = el.querySelector('.me'), cone = el.querySelector('.cone');
+      dot.classList.toggle('fixed', !!gps.corr);
+      cone.style.display = gps.bear == null ? 'none' : 'block';
+      if (gps.bear != null) cone.style.transform = `rotate(${gps.bear}deg)`;
+    }
+    if (st.follow) map.panTo(ll, { animate: true, duration: 0.4 });
+  }
+  function setPill(cls, text) {
+    const p = $('#gpsPill'); p.className = 'pill ' + cls + (gps.corr ? ' fixed' : '');
+    p.querySelector('span').textContent = text + (gps.corr ? '・已修正' : '');
+  }
+
+  /* ---------- GPS ---------- */
+  function startGPS() {
+    if (!navigator.geolocation) { setPill('bad', '這支手機無法定位'); return; }
+    if (gps.watch != null) navigator.geolocation.clearWatch(gps.watch);
+    gps.watch = navigator.geolocation.watchPosition(onFix, onGpsErr, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+  }
+  function onGpsErr(err) {
+    if (err.code === 1) setPill('bad', '沒有定位權限');
+    else setPill('bad', 'GPS 訊號弱');
+    if (err.code === 1) toast('請到「設定 › 隱私權 › 定位服務 › Safari 網站」允許使用位置。', 6000);
+  }
+  function onFix(p) {
+    const c = p.coords, t = Date.now();
+    let lat = c.latitude, lon = c.longitude;
+    const acc = Math.max(3, c.accuracy || 50);
+    gps.raw = { lat, lon, acc, t };
+    if (gps.corr) {
+      if (t - gps.corr.t > 6 * 60e3 || C.dist([lat, lon], [gps.corr.rlat, gps.corr.rlon]) > 300) { gps.corr = null; toast('位置修正已用完，改回 GPS'); }
+      else { lat += gps.corr.dLat; lon += gps.corr.dLon; }
+    }
+    if (acc > S.maxAcc && gps.fix && t - gps.lastGood < 20000) { setPill('bad', `GPS 誤差 ${Math.round(acc)} 公尺`); return; }
+    gps.lastGood = t;
+    // 簡易卡爾曼濾波：減少飄移
+    const k = gps.kf;
+    if (!k || t - k.t > 30000 || gps.corr && gps.corr.fresh) {
+      gps.kf = { lat, lon, v: acc * acc, t };
+      if (gps.corr) gps.corr.fresh = false;
+    } else {
+      const dt = Math.max(0.2, (t - k.t) / 1000);
+      const spd = c.speed != null && c.speed >= 0 ? c.speed : gps.speed;
+      k.v += dt * (8 + 6 * spd * spd);
+      const K = k.v / (k.v + acc * acc);
+      k.lat += K * (lat - k.lat); k.lon += K * (lon - k.lon); k.v *= (1 - K); k.t = t;
+    }
+    const f = { lat: gps.kf.lat, lon: gps.kf.lon, acc: Math.sqrt(gps.kf.v), t };
+    // 行進方向與速度
+    gps.hist.push(f); while (gps.hist.length > 30) gps.hist.shift();
+    let ref = null;
+    for (let i = gps.hist.length - 2; i >= 0; i--) {
+      const h = gps.hist[i]; if (t - h.t > 15000) break;
+      if (C.dist([h.lat, h.lon], [f.lat, f.lon]) >= 6) { ref = h; break; }
+    }
+    if (ref) { gps.bear = C.bearing([ref.lat, ref.lon], [f.lat, f.lon]); gps.speed = C.dist([ref.lat, ref.lon], [f.lat, f.lon]) / Math.max(1, (t - ref.t) / 1000); }
+    else if (c.heading != null && !isNaN(c.heading) && c.speed > 0.5) { gps.bear = c.heading; gps.speed = c.speed; }
+    else gps.speed = c.speed != null && c.speed >= 0 ? c.speed : 0;
+    gps.fix = f;
+    setPill(acc <= 10 ? 'good' : acc <= 25 ? 'mid' : 'bad', `GPS ±${Math.round(acc)} 公尺`);
+    drawMe();
+    if (nav) navTick();
+  }
+  function waitFix(ms) {
+    return new Promise(res => {
+      if (gps.fix && Date.now() - gps.fix.t < 15000) return res(gps.fix);
+      const t0 = Date.now();
+      const iv = setInterval(() => {
+        if (gps.fix && Date.now() - gps.fix.t < 15000) { clearInterval(iv); res(gps.fix); }
+        else if (Date.now() - t0 > ms) { clearInterval(iv); res(null); }
+      }, 300);
+    });
+  }
+  // 手動修正位置
+  function applyCorrection(p, label) {
+    const r = gps.raw;
+    if (r) gps.corr = { dLat: p[0] - r.lat, dLon: p[1] - r.lon, t: Date.now(), rlat: r.lat, rlon: r.lon, fresh: true };
+    gps.kf = { lat: p[0], lon: p[1], v: 25, t: Date.now() };
+    gps.fix = { lat: p[0], lon: p[1], acc: 5, t: Date.now() };
+    gps.hist = [gps.fix];
+    st.follow = true; $('#fabFollow').classList.add('on');
+    drawMe(); setPill('good', 'GPS');
+    const msg = '位置已修正' + (label ? '到' + label : '');
+    toast(msg);
+    if (nav) {
+      say(msg);
+      const b = C.trackRelocate(nav.tr, p);
+      if (!b || b.d > 30) reroute('重新規劃路線');
+      else navTick(true);
+    }
+  }
+  async function correctByText(text) {
+    if (!text) return;
+    const near = gps.fix ? [gps.fix.lat, gps.fix.lon] : [map.getCenter().lat, map.getCenter().lng];
+    let r = st.net ? C.resolvePlace(st.net, text, near) : null;
+    if (!r) {
+      try {
+        const [s, w, n, e] = st.block ? C.bbox(st.block.poly, 800) : [near[0] - 0.02, near[1] - 0.02, near[0] + 0.02, near[1] + 0.02];
+        const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=tw&accept-language=zh-TW&bounded=1&viewbox=${w},${n},${e},${s}&q=${encodeURIComponent(text)}`;
+        const res = await fetch(url); const js = await res.json();
+        if (js && js[0]) r = { p: [+js[0].lat, +js[0].lon], label: text };
+      } catch (err) { /* 沒網路 */ }
+    }
+    if (!r) { const m = '找不到「' + text + '」，請換個說法，或在地圖上點選'; toast(m, 4000); if (nav) say(m); return false; }
+    applyCorrection(r.p, r.label);
+    return true;
+  }
+
+  /* ---------- 語音播報 ---------- */
+  const tts = { voice: null, ok: 'speechSynthesis' in window };
+  function pickVoice() {
+    if (!tts.ok) return;
+    const vs = speechSynthesis.getVoices();
+    tts.voice = vs.find(v => /zh[-_]TW/i.test(v.lang)) || vs.find(v => /zh[-_](Hant|HK)/i.test(v.lang)) || vs.find(v => /^zh/i.test(v.lang)) || null;
+  }
+  if (tts.ok) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+  let capT;
+  function say(text, opt = {}) {
+    if (!text) return;
+    const cap = $('#caption'); cap.querySelector('span').textContent = text; cap.style.display = 'flex';
+    clearTimeout(capT); capT = setTimeout(() => (cap.style.display = 'none'), Math.max(3500, text.length * 260));
+    if (nav && !opt.noLast) nav.lastSaid = text;
+    if (nav) nav.lastSpeak = Date.now();
+    if (!tts.ok) return;
+    if (opt.queue !== true) speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'zh-TW'; if (tts.voice) u.voice = tts.voice; u.rate = S.rate; u.volume = 1;
+    speechSynthesis.speak(u);
+  }
+  function beep(freq = 880, ms = 120) {
+    try {
+      const ac = beep.ac || (beep.ac = new (window.AudioContext || window.webkitAudioContext)());
+      if (ac.state === 'suspended') ac.resume();
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.value = freq; g.gain.value = 0.15; o.connect(g); g.connect(ac.destination);
+      o.start(); o.stop(ac.currentTime + ms / 1000);
+    } catch (e) { /* 無 */ }
+  }
+
+  /* ---------- 螢幕常亮 ---------- */
+  let wakeLock = null;
+  async function keepAwake() {
+    try { if ('wakeLock' in navigator) { wakeLock = await navigator.wakeLock.request('screen'); } }
+    catch (e) { toast('無法自動保持螢幕常亮，請到「設定 › 螢幕顯示與亮度 › 自動鎖定」改成「永不」', 6000); }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && nav) { keepAwake(); if (gps.watch == null) startGPS(); }
+  });
+
+  /* ---------- 耳機按鍵（試驗） ---------- */
+  let silent = null;
+  function silentWavUrl() {
+    const sr = 8000, n = sr, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    const w = (o, s) => [...s].forEach((ch, i) => v.setUint8(o + i, ch.charCodeAt(0)));
+    w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  }
+  function setupEarButtons(on) {
+    if (!on || !('mediaSession' in navigator)) { if (silent) { silent.pause(); } return; }
+    if (!silent) { silent = new Audio(silentWavUrl()); silent.loop = true; }
+    silent.play().catch(() => {});
+    const ms = navigator.mediaSession;
+    ms.metadata = new MediaMetadata({ title: '派報系統導航中', artist: '派報系統' });
+    const keep = () => { silent.play().catch(() => {}); ms.playbackState = 'playing'; };
+    ms.setActionHandler('play', () => { keep(); doCmd({ cmd: 'repeat' }); });
+    ms.setActionHandler('pause', () => { keep(); doCmd({ cmd: 'repeat' }); });
+    try { ms.setActionHandler('previoustrack', () => { keep(); doCmd({ cmd: 'repeat' }); }); } catch (e) { /* 無 */ }
+    try { ms.setActionHandler('nexttrack', () => { keep(); listen(); }); } catch (e) { /* 無 */ }
+  }
+
+  /* ---------- 導航 ---------- */
+  function remainingReq() { return reqChains().filter(c => !isDone(c)).map(c => c.i); }
+  async function startNav() {
+    if (!st.block) { toast('先圈選或選擇一個區塊'); openSheet('shBlocks'); return; }
+    if (!st.net) { toast('這個區塊還沒有圖資，正在重新下載'); await downloadNet(); if (!st.net) return; }
+    const req = remainingReq();
+    if (!req.length) { toast('這個區塊已經全部派完。要重新開始，請到「我的區塊」按「重設進度」。', 5000); return; }
+    // 在點擊當下啟動語音（iPhone 規定）
+    say('準備開始', { noLast: true });
+    beep(660, 60);
+    setupEarButtons(S.earBtn);
+    busy(true, '等待 GPS 定位…');
+    const f = await waitFix(10000);
+    let start;
+    if (f) start = [f.lat, f.lon];
+    else { const c = map.getCenter(); start = [c.lat, c.lng]; toast('還沒定到位，先用地圖中心當起點', 4000); }
+    busy(true, '規劃最短路線中…'); await nextFrame();
+    const route = C.planRoute(st.net, req, start, { returnToStart: S.returnToStart });
+    busy(false);
+    if (!route) { toast('規劃不出路線，請重新下載圖資再試'); return; }
+    nav = { route, tr: C.createTracker(route), mi: 0, stepPtr: 0, flags: new Map(), paused: false, lastSpeak: 0, lastReroute: Date.now(), offSince: 0, markSaid: new Set(), lastSaid: '', lastFixT: Date.now(), far: false, lastFarSay: 0 };
+    setMode('nav'); keepAwake();
+    st.follow = true; $('#fabFollow').classList.add('on');
+    if (f) map.setView(start, Math.max(map.getZoom(), 18));
+    drawRoute();
+    const m0 = route.maneuvers[0];
+    const next = route.maneuvers.find(m => m.type !== 'start');
+    let intro = `開始導航，這一趟大約${sayDist(route.total)}。`;
+    if (f) { const d0 = C.dist(start, route.coords[0]); if (d0 > 30) intro += `先走到藍線的起點，約${sayDist(d0)}。`; }
+    intro += m0.name ? `沿著${m0.name}走` : '';
+    if (next && next.type !== 'end') intro += `，${sayDist(next.d)}後${next.dir}`;
+    say(intro);
+    if (gps.fix) navTick(true);
+    else updateCard(0);
+  }
+  function stopNav(done) {
+    if (!nav) return;
+    saveProgress(true);
+    nav = null; L_route.clearLayers();
+    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+    if (silent) silent.pause();
+    setMode('idle'); renderBlocks();
+    if (!done) toast('已結束導航，進度已存好');
+  }
+  function reroute(msg) {
+    if (!nav) return;
+    const req = remainingReq();
+    if (!req.length) return finishNav();
+    const p = gps.fix ? [gps.fix.lat, gps.fix.lon] : nav.route.coords[0];
+    const route = C.planRoute(st.net, req, p, { returnToStart: S.returnToStart });
+    if (!route) { toast('重新規劃失敗'); return; }
+    Object.assign(nav, { route, tr: C.createTracker(route), mi: 0, stepPtr: 0, flags: new Map(), lastReroute: Date.now(), offSince: 0 });
+    drawRoute();
+    const next = route.maneuvers.find(m => m.type !== 'start');
+    const m0 = route.maneuvers[0];
+    let t = (msg ? msg + '。' : '') + (m0.name ? '沿著' + m0.name + '走' : '往藍線方向走');
+    if (next && next.type !== 'end') t += `，${sayDist(next.d)}後${next.dir}`;
+    say(t);
+    navTick(true);
+  }
+  function finishNav() {
+    if (!nav) return;
+    say('恭喜，這個區塊全部派完了，辛苦了！');
+    toast('這個區塊全部派完了', 5000);
+    stopNav(true);
+  }
+
+  // 路線（只畫前面一段，方便看）
+  let routeAhead = null, routeCase = null, manDot = null;
+  function drawRoute() {
+    L_route.clearLayers();
+    routeCase = L.polyline([], { renderer: cv, color: '#fff', weight: 11, opacity: 0.9, interactive: false, lineCap: 'round', lineJoin: 'round' }).addTo(L_route);
+    routeAhead = L.polyline([], { renderer: cv, color: '#1F4E9E', weight: 7, opacity: 0.95, interactive: false, lineCap: 'round', lineJoin: 'round' }).addTo(L_route);
+    manDot = L.circleMarker([0, 0], { renderer: cv, radius: 8, color: '#fff', weight: 3, fillColor: '#1F4E9E', fillOpacity: 1, interactive: false }).addTo(L_route);
+    updateRouteLine(0);
+  }
+  function updateRouteLine(s) {
+    const r = nav.route; if (!routeAhead) return;
+    const end = Math.min(r.total, s + 450);
+    const pts = [C.pointAtRoute(r, s)];
+    for (let i = 0; i < r.coords.length; i++) { if (r.cum[i] <= s) continue; if (r.cum[i] >= end) break; pts.push(r.coords[i]); }
+    pts.push(C.pointAtRoute(r, end));
+    routeAhead.setLatLngs(pts); routeCase.setLatLngs(pts);
+    const m = r.maneuvers[nav.mi];
+    if (m && m.type !== 'start') manDot.setLatLng(C.pointAtRoute(r, m.d)).setStyle({ opacity: 1, fillOpacity: 1 });
+    else manDot.setStyle({ opacity: 0, fillOpacity: 0 });
+  }
+
+  function arrowSvg(m) {
+    const w = '#fff';
+    if (!m) return '';
+    if (m.type === 'end') return `<svg viewBox="0 0 48 48"><path d="M14 42V6" stroke="${w}" stroke-width="4" stroke-linecap="round"/><path d="M14 8h22l-5 7 5 7H14z" fill="${w}"/></svg>`;
+    if (m.type === 'uturn') return `<svg viewBox="0 0 48 48" fill="none" stroke="${w}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M32 42V18a10 10 0 0 0-20 0v6"/><path d="M5 18l7 8 7-8"/></svg>`;
+    const a = m.type === 'start' ? 0 : Math.max(-120, Math.min(120, m.ang || 0));
+    return `<svg viewBox="0 0 48 48" fill="none" stroke="${w}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><g transform="rotate(${a} 24 24)"><path d="M24 42V8"/><path d="M12 19 24 7l12 12"/></g></svg>`;
+  }
+  function updateCard(s) {
+    const r = nav.route, m = r.maneuvers[nav.mi];
+    const p = progressNums();
+    $('#navProg').textContent = `已派 ${p.all ? Math.floor(p.done / p.all * 100) : 0}%｜剩 ${fmtDist(Math.max(0, r.total - s))}`;
+    if (nav.far) {
+      $('#navIco').innerHTML = arrowSvg({ type: 'start' });
+      $('#navDist').innerHTML = `${Math.round(nav.farD)}<small>公尺</small>`;
+      $('#navText').textContent = '離路線太遠，先走回藍線';
+      $('#navRoad').textContent = '';
+      return;
+    }
+    if (!m) return;
+    const d = Math.max(0, m.d - s);
+    $('#navIco').innerHTML = arrowSvg(m);
+    $('#navDist').innerHTML = m.type === 'start' ? '出發' : `${d >= 1000 ? (d / 1000).toFixed(1) : Math.round(d)}<small>${d >= 1000 ? '公里' : '公尺'}</small>`;
+    $('#navText').textContent = m.type === 'start' ? (m.name ? '沿著' + m.name + '走' : '沿藍線走') : m.text.replace(/，這條是死巷，右進左出，到底回頭/, '（死巷，右進左出）');
+    const step = r.steps.find(x => x.d1 > s) || r.steps[r.steps.length - 1];
+    const cn = step ? st.net.chains[step.c].name : '';
+    $('#navRoad').textContent = (cn ? '目前：' + cn : '') + (nav.paused ? '　語音暫停中' : '');
+  }
+
+  function navTick(force) {
+    if (!nav || !gps.fix) return;
+    const f = gps.fix, p = [f.lat, f.lon], now = Date.now();
+    const dt = Math.min(20, Math.max(1, (now - nav.lastFixT) / 1000)); nav.lastFixT = now;
+    const off = Math.max(S.offRoute, Math.min(f.acc, 40) * 0.8);
+    const r = C.trackUpdate(nav.tr, p, gps.bear, gps.speed, off, 40 + Math.max(1.5, gps.speed) * dt * 2);
+    const R = nav.route;
+    // 1) 走過的街道標成已派
+    let changed = false;
+    if (!r.off) {
+      while (nav.stepPtr < R.steps.length && R.steps[nav.stepPtr].d1 <= r.s + 3) {
+        const c = st.net.chains[R.steps[nav.stepPtr].c];
+        if (c.req && !isDone(c)) { st.covered.add(c.key); restyle(c.i); changed = true; }
+        nav.stepPtr++;
+      }
+    }
+    const newly = C.markVisits(st.net, p, Math.min(15, Math.max(8, f.acc * 0.8)), st.hits, st.covered);
+    for (const ci of newly) { restyle(ci); changed = true; }
+    if (changed) saveProgress();
+    if (!remainingReq().length) return finishNav();
+
+    // 2) 偏離路線
+    nav.far = false;
+    if (r.off) {
+      if (r.d > 300) {
+        nav.far = true; nav.farD = C.dist(p, C.pointAtRoute(R, r.s));
+        if (now - nav.lastFarSay > 90000) { nav.lastFarSay = now; say(`離路線還有${sayDist(nav.farD)}，先走回藍線`); }
+      } else {
+        if (!nav.offSince) nav.offSince = now;
+        if (now - nav.offSince > 6000 && nav.tr.offCount >= 3 && now - nav.lastReroute > 12000) { reroute('偏離路線，重新規劃'); return; }
+      }
+    } else nav.offSince = 0;
+
+    // 3) 語音提示
+    if (!nav.far) announce(r.s, now);
+    checkMarks(p, now);
+    updateCard(r.s); updateRouteLine(r.s);
+  }
+
+  function announce(s, now) {
+    const M = nav.route.maneuvers;
+    while (nav.mi < M.length - 1 && M[nav.mi].d < s - 4) nav.mi++;
+    if (nav.mi === 0 && M.length > 1 && s > 3) nav.mi = 1;
+    const m = M[nav.mi]; if (!m || m.type === 'start') return;
+    if (nav.paused) return;
+    const d = m.d - s;
+    const lead = Math.max(1.2, gps.speed || 1.2) * 1.5;
+    const f = nav.flags.get(nav.mi) || {};
+    if (m.type === 'end') {
+      if (d <= 10 && !f.near) { f.near = true; say('快到終點了'); }
+      nav.flags.set(nav.mi, f); return;
+    }
+    const nx = M[nav.mi + 1];
+    const tail = nx && nx.type !== 'end' && nx.d - m.d < 25 ? `，接著${nx.dir}` : '';
+    if (S.preDist > 0 && !f.pre && d <= S.preDist + lead && d > S.nearDist + 8) {
+      f.pre = true; say(`前方${r5(d)}公尺，${m.text}${tail}`);
+    } else if (!f.near && d <= S.nearDist + lead) {
+      f.near = f.pre = true;
+      if (m.type === 'uturn') say(m.text + tail);
+      else if (S.preDist > 0 && d > 3) say(`${r5(d)}公尺後${m.dir}${m.inout ? '，右進左出' : ''}${tail}`);
+      else say(`${d > 3 ? r5(d) + '公尺後' : ''}${m.text}${tail}`);
+    } else if (S.periodic > 0 && now - nav.lastSpeak > S.periodic * 1000 && d > S.nearDist + 15) {
+      say(`繼續直走，${sayDist(d)}後${m.dir}`, { noLast: true });
+    }
+    nav.flags.set(nav.mi, f);
+  }
+  function checkMarks(p, now) {
+    for (const mk of st.marks) {
+      if (nav.markSaid.has(mk.id)) continue;
+      if (C.dist(p, [mk.lat, mk.lon]) <= 20) {
+        nav.markSaid.add(mk.id);
+        const k = MARK[mk.type] || MARK.other;
+        setTimeout(() => say(k.say + (mk.note && mk.type === 'other' ? '：' + mk.note : ''), { noLast: true, queue: true }), 300);
+      }
+    }
+  }
+  function currentInstruction() {
+    if (!nav) return '';
+    const m = nav.route.maneuvers[nav.mi], s = nav.tr.s;
+    if (!m) return '';
+    if (m.type === 'start') { const nx = nav.route.maneuvers[1]; return nx && nx.type !== 'end' ? `沿藍線走，${sayDist(nx.d - s)}後${nx.dir}` : '沿藍線走'; }
+    if (m.type === 'end') return `再${sayDist(m.d - s)}就派完了`;
+    return `${r5(m.d - s)}公尺後${m.text}`;
+  }
+  function skipStreet() {
+    if (!nav) return;
+    const R = nav.route, s = nav.tr.s;
+    let step = R.steps.find(x => x.d1 > s + 2 && st.net.chains[x.c].req && !isDone(st.net.chains[x.c]));
+    if (!step) { say('前面沒有要跳過的街道'); return; }
+    const c0 = st.net.chains[step.c];
+    let n = 0;
+    for (const c of reqChains()) {
+      if (isDone(c)) continue;
+      if (c === c0 || (c.wayId === c0.wayId && c0.name && c.name === c0.name)) { st.skipped.add(c.key); restyle(c.i); n++; }
+    }
+    saveProgress(true);
+    reroute(`已跳過${c0.name || '這條'}`);
+  }
+
+  /* ---------- 語音指令 ---------- */
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null;
+  function listen(onText) {
+    if (!SR) {
+      const t = window.prompt('這支手機的 Safari 不能語音輸入，請打字輸入指令：');
+      if (t) onText ? onText(t) : runText(t);
+      return;
+    }
+    if (rec) { try { rec.abort(); } catch (e) { /* 無 */ } }
+    if (tts.ok) speechSynthesis.cancel();
+    rec = new SR(); rec.lang = 'zh-TW'; rec.interimResults = false; rec.maxAlternatives = 4; rec.continuous = false;
+    const box = $('#listen'); $('#listenText').textContent = onText ? '請說門牌或巷名' : '請說指令';
+    box.style.display = 'flex'; beep(880, 100);
+    let got = false;
+    const tmo = setTimeout(() => { try { rec.stop(); } catch (e) { /* 無 */ } }, 8000);
+    rec.onresult = e => {
+      got = true; clearTimeout(tmo); box.style.display = 'none';
+      const alts = [...e.results[0]].map(a => a.transcript);
+      if (onText) return onText(alts[0]);
+      for (const a of alts) { const c = C.parseCommand(a); if (c.cmd !== 'unknown' && c.cmd !== 'none') return doCmd(c, a); }
+      doCmd(C.parseCommand(alts[0]), alts[0]);
+    };
+    rec.onerror = e => {
+      clearTimeout(tmo); box.style.display = 'none';
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') toast('請到「設定 › 一般 › 鍵盤」打開「聽寫」，並允許 Safari 使用麥克風', 6000);
+      else if (e.error !== 'aborted' && e.error !== 'no-speech') toast('沒聽清楚，請再按一次');
+    };
+    rec.onend = () => { clearTimeout(tmo); box.style.display = 'none'; if (!got) beep(440, 90); };
+    try { rec.start(); } catch (e) { box.style.display = 'none'; toast('語音辨識無法啟動'); }
+  }
+  $('#listen').addEventListener('click', () => { try { rec && rec.abort(); } catch (e) { /* 無 */ } $('#listen').style.display = 'none'; });
+  function runText(t) { doCmd(C.parseCommand(t), t); }
+  function doCmd(c, raw) {
+    switch (c.cmd) {
+      case 'pause': if (nav) { nav.paused = true; $('#btnPause').classList.add('on'); $('#btnPause').textContent = '繼續'; if (tts.ok) speechSynthesis.cancel(); toast('語音暫停，路線和進度照常記錄'); updateCard(nav.tr.s); } break;
+      case 'resume': if (nav) { nav.paused = false; $('#btnPause').classList.remove('on'); $('#btnPause').textContent = '暫停'; say('繼續導航。' + currentInstruction()); } else startNav(); break;
+      case 'repeat': if (nav) say(currentInstruction(), { noLast: true }); break;
+      case 'skip': skipStreet(); break;
+      case 'reroute': if (nav) reroute('重新規劃'); break;
+      case 'progress': { const p = progressNums(); say(`已派${p.all ? Math.floor(p.done / p.all * 100) : 0}%，還剩${sayDist(p.left)}要派`, { noLast: true }); break; }
+      case 'mark': addMark(c.arg, c.arg === 'other' ? c.note : ''); break;
+      case 'locate': correctByText(c.arg); break;
+      case 'stop': if (nav && confirm('要結束這次導航嗎？進度會保留。')) stopNav(); break;
+      default: { const m = '聽不懂「' + (raw || '') + '」，請再說一次'; toast(m); if (nav) say(m, { noLast: true }); }
+    }
+  }
+
+  /* ---------- 圈選區塊 ---------- */
+  let draw = null;
+  function startDraw() {
+    closeSheets(); if (nav) return;
+    draw = { pts: [] }; setMode('draw'); updateDraw();
+  }
+  function updateDraw() {
+    L_draw.clearLayers();
+    const pts = draw.pts;
+    if (pts.length) {
+      L.polyline(pts.length >= 3 ? pts.concat([pts[0]]) : pts, { color: '#1F4E9E', weight: 3, dashArray: '8 6', interactive: false }).addTo(L_draw);
+      if (pts.length >= 3) L.polygon(pts, { stroke: false, fillColor: '#1F4E9E', fillOpacity: 0.08, interactive: false }).addTo(L_draw);
+      pts.forEach(p => L.marker(p, { interactive: false, icon: L.divIcon({ className: '', html: '<div class="vtx"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(L_draw));
+    }
+    $('#drawTip').textContent = pts.length < 3 ? `在地圖上依序點出區塊的角落，已點 ${pts.length} 點，至少要 3 點。` : `已點 ${pts.length} 點。可以繼續加點，或按「完成」。`;
+    $('#drawDone').disabled = pts.length < 3; $('#drawDone').style.opacity = pts.length < 3 ? 0.5 : 1;
+  }
+  function endDraw() { draw = null; L_draw.clearLayers(); setMode('idle'); }
+
+  // 名稱輸入面板
+  let nameCb = null;
+  function askName(title, def, cb) {
+    $('#nameTitle').textContent = title; $('#nameInput').value = def || ''; nameCb = cb;
+    openSheet('shName'); setTimeout(() => $('#nameInput').focus(), 250);
+  }
+  $('#nameOk').onclick = () => { const v = $('#nameInput').value.trim(); closeSheets(); if (nameCb) nameCb(v); nameCb = null; };
+
+  /* ---------- 經緯度輸入 ---------- */
+  function parseCoords(text) {
+    const pts = [];
+    for (const line of text.split(/\n|;/)) {
+      const nums = (line.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+      if (nums.length < 2) continue;
+      let [a, b] = nums;
+      if (a > 90 && b <= 90) [a, b] = [b, a]; // 經度寫在前面就自動對調
+      if (Math.abs(a) > 90 || Math.abs(b) > 180) continue;
+      pts.push([a, b]);
+    }
+    if (pts.length === 2) {
+      const [p, q] = pts;
+      return [[p[0], p[1]], [p[0], q[1]], [q[0], q[1]], [q[0], p[1]]];
+    }
+    return pts;
+  }
+
+  /* ---------- 面板 ---------- */
+  function openSheet(id) {
+    closeSheets(true);
+    if (id === 'shBlocks') renderBlockList();
+    if (id === 'shSettings' || id === 'shLayer') syncSettingsUI();
+    $('#backdrop').style.display = 'block'; $('#' + id).classList.add('open');
+  }
+  function closeSheets(keepBackdrop) {
+    $$('.sheet.open').forEach(s => s.classList.remove('open'));
+    if (!keepBackdrop) $('#backdrop').style.display = 'none';
+  }
+  $('#backdrop').onclick = () => closeSheets();
+  $$('.sheet').forEach(sh => { const x = document.createElement('button'); x.className = 'x'; x.setAttribute('aria-label', '關閉'); x.textContent = '✕'; x.onclick = () => closeSheets(); sh.prepend(x); });
+  $$('[data-close]').forEach(b => (b.onclick = () => closeSheets()));
+
+  function renderBlockList() {
+    const box = $('#blkList');
+    if (!st.blocks.length) { box.innerHTML = '<div class="empty">還沒有區塊。<br>按「在地圖上圈選」，在地圖上點出要派報的範圍。</div>'; return; }
+    box.innerHTML = st.blocks.map(b => {
+      const cur = st.block && st.block.id === b.id;
+      const p = LS.get('prog_' + b.id, { c: [], s: [] });
+      let pc = '';
+      if (cur && st.net) pc = pct() + '%';
+      const has = !!localStorage.getItem('pb_net_' + b.id);
+      return `<div class="blk${cur ? ' cur' : ''}" data-id="${b.id}">
+        <div class="hd"><b>${esc(b.name)}</b><span class="meta">${cur ? '使用中' : ''}</span></div>
+        <div class="meta">${has ? (cur ? `已派 ${pc}` : `已派 ${p.c.length + p.s.length} 段街道`) : '還沒下載圖資'}</div>
+        ${cur && st.net ? `<div class="bar"><i style="width:${pct()}%"></i></div>` : ''}
+        <div class="btnrow">
+          ${cur ? '' : '<button class="btn sm primary" data-act="use">使用這個區塊</button>'}
+          <button class="btn sm" data-act="show">${b.show ? '隱藏框線' : '顯示框線'}</button>
+          <button class="btn sm" data-act="rename">改名</button>
+          ${cur ? '<button class="btn sm" data-act="reset">重設進度</button><button class="btn sm" data-act="dl">重新下載圖資</button>' : ''}
+          <button class="btn sm danger" data-act="del">刪除</button>
+        </div></div>`;
+    }).join('');
+  }
+  $('#blkList').addEventListener('click', e => {
+    const btn = e.target.closest('[data-act]'); if (!btn) return;
+    const id = btn.closest('.blk').dataset.id, b = st.blocks.find(x => x.id === id), act = btn.dataset.act;
+    if (act === 'use') { closeSheets(); selectBlock(id); }
+    else if (act === 'show') { b.show = !b.show; saveBlocks(); renderBlocks(); renderBlockList(); }
+    else if (act === 'rename') askName('區塊改名', b.name, v => { if (v) { b.name = v; saveBlocks(); renderBlocks(); } });
+    else if (act === 'reset') { if (confirm('要把「' + b.name + '」的派報進度全部清掉，重新開始嗎？')) { st.covered.clear(); st.skipped.clear(); st.hits.clear(); saveProgress(true); renderNet(); renderBlocks(); renderBlockList(); toast('進度已重設'); } }
+    else if (act === 'dl') { closeSheets(); downloadNet(); }
+    else if (act === 'del') { if (confirm('確定刪除「' + b.name + '」？進度也會一起刪除。')) { deleteBlock(id); renderBlockList(); } }
+  });
+
+  /* ---------- 設定 ---------- */
+  function syncSettingsUI() {
+    $$('[data-set]').forEach(el => {
+      const k = el.dataset.set;
+      if (el.type === 'checkbox') el.checked = !!S[k]; else el.value = S[k];
+    });
+    $$('[data-show]').forEach(el => {
+      const k = el.dataset.show, v = S[k];
+      el.textContent = k === 'rate' ? Number(v).toFixed(2) + ' 倍' : (k === 'preDist' && +v === 0 ? '不預告' : v + ' 公尺');
+    });
+    $$('#layerBtns .btn').forEach(b => b.classList.toggle('primary', b.dataset.layer === S.layer));
+  }
+  $$('[data-set]').forEach(el => {
+    el.addEventListener(el.type === 'range' ? 'input' : 'change', () => {
+      const k = el.dataset.set;
+      const old = S[k];
+      S[k] = el.type === 'checkbox' ? el.checked : Number(el.value);
+      saveSettings(); syncSettingsUI();
+      if (k === 'showAddr') renderAddrs();
+      if (k === 'includePaths' && old !== S[k] && st.block) { st.net = null; downloadNet(); }
+      if (k === 'earBtn' && nav) setupEarButtons(S.earBtn);
+    });
+  });
+  $('#ttsTest').onclick = () => say(`前方${S.preDist || 30}公尺右轉，進入中山路一段120巷。${S.nearDist}公尺後右轉。`, { noLast: true });
+  $('#wipeAll').onclick = () => {
+    if (!confirm('確定刪除所有區塊、進度、標記和設定？刪掉就找不回來。')) return;
+    Object.keys(localStorage).filter(k => k.startsWith('pb_')).forEach(k => localStorage.removeItem(k));
+    location.reload();
+  };
+  $$('#layerBtns .btn').forEach(b => (b.onclick = () => { setLayer(b.dataset.layer); }));
+
+  /* ---------- 地圖點擊 ---------- */
+  map.on('click', e => {
+    const p = [e.latlng.lat, e.latlng.lng];
+    if (st.mode === 'draw') { draw.pts.push(p); updateDraw(); }
+    else if (st.mode === 'pick') { setMode(nav ? 'nav' : 'idle'); applyCorrection(p, ''); }
+    else if (st.mode === 'edit') {
+      if (!st.net) return;
+      const nc = C.nearestChain(st.net, p, 25, c => c.req);
+      if (!nc) { toast('請點在橘色或綠色的街道上'); return; }
+      const c = st.net.chains[nc.c];
+      if (isDone(c)) { st.covered.delete(c.key); st.skipped.delete(c.key); st.hits.delete(c.key); }
+      else st.covered.add(c.key);
+      restyle(c.i); saveProgress(true); renderBlocks();
+    }
+  });
+
+  /* ---------- 按鈕 ---------- */
+  $('#btnDraw').onclick = startDraw;
+  $('#blkDraw').onclick = startDraw;
+  $('#btnBlocks').onclick = $('#btnBlock').onclick = () => { if (!nav) openSheet('shBlocks'); };
+  $('#btnSettings').onclick = () => openSheet('shSettings');
+  $('#btnStart').onclick = startNav;
+  $('#blkCoords').onclick = () => { $('#coordText').value = ''; $('#coordName').value = ''; openSheet('shCoords'); };
+  $('#blkHideAll').onclick = () => { st.blocks.forEach(b => (b.show = false)); saveBlocks(); renderBlocks(); renderBlockList(); toast('框線都隱藏了，區塊資料還在'); };
+  $('#coordSave').onclick = () => {
+    const pts = parseCoords($('#coordText').value);
+    if (pts.length < 3) { toast('至少要 2 個點（長方形對角）或 3 個點'); return; }
+    closeSheets(); createBlock(pts, $('#coordName').value.trim());
+  };
+  $('#drawUndo').onclick = () => { if (draw && draw.pts.length) { draw.pts.pop(); updateDraw(); } };
+  $('#drawCancel').onclick = endDraw;
+  $('#drawDone').onclick = () => {
+    if (!draw || draw.pts.length < 3) return;
+    const pts = draw.pts.slice(); endDraw();
+    askName('幫這個區塊取名字', '區塊 ' + (st.blocks.length + 1), v => createBlock(pts, v));
+  };
+  $('#pickCancel').onclick = () => setMode(nav ? 'nav' : 'idle');
+  $('#fabEdit').onclick = () => { if (!st.net) { toast('先選一個有圖資的區塊'); return; } setMode('edit'); };
+  $('#editDone').onclick = () => setMode('idle');
+  $('#fabLayer').onclick = () => openSheet('shLayer');
+  $('#fabFollow').onclick = () => {
+    st.follow = true; $('#fabFollow').classList.add('on');
+    if (gps.fix) map.setView([gps.fix.lat, gps.fix.lon], Math.max(map.getZoom(), 17));
+    else toast('還在等 GPS 定位');
+  };
+  $('#btnMic').onclick = () => listen();
+  $('#btnRepeat').onclick = () => doCmd({ cmd: 'repeat' });
+  $('#btnPause').onclick = () => doCmd({ cmd: nav && nav.paused ? 'resume' : 'pause' });
+  $('#btnReroute').onclick = () => doCmd({ cmd: 'reroute' });
+  $('#btnSkip').onclick = () => doCmd({ cmd: 'skip' });
+  $('#btnProg').onclick = () => doCmd({ cmd: 'progress' });
+  $('#btnStop').onclick = () => doCmd({ cmd: 'stop' });
+  $('#btnMark').onclick = () => { $('#markNote').value = ''; openSheet('shMark'); };
+  $$('[data-mark]').forEach(b => (b.onclick = () => { const note = $('#markNote').value.trim(); closeSheets(); addMark(b.dataset.mark, note); }));
+  $('#btnFix').onclick = () => { $('#fixText').value = ''; openSheet('shFix'); };
+  $('#fixTap').onclick = () => { closeSheets(); setMode('pick'); };
+  $('#fixGo').onclick = async () => { const t = $('#fixText').value.trim(); if (!t) return; closeSheets(); await correctByText(t); };
+  $('#fixVoice').onclick = () => { closeSheets(); listen(t => correctByText(t)); };
+  $('#fixClear').onclick = () => { gps.corr = null; gps.kf = null; closeSheets(); toast('已改回使用 GPS'); };
+
+  /* ---------- 啟動 ---------- */
+  setLayer(S.layer);
+  renderMarks();
+  const last = LS.get('curBlock', null);
+  if (last && st.blocks.some(b => b.id === last)) selectBlock(last);
+  else renderBlocks();
+  $('#fabFollow').classList.add('on');
+  startGPS();
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    toast('要用 https 網址開啟，iPhone 才會給定位', 6000);
+  }
+  window.__pb = { map, st, gps, C, get nav() { return nav; }, onFix, runText, startNav };
+})();
+
+</script>
+</body>
+</html>
