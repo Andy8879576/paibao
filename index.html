@@ -56,6 +56,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 #fabs{position:fixed;right:12px;z-index:500;bottom:calc(env(safe-area-inset-bottom) + 112px);display:flex;flex-direction:column;gap:10px}
 .fab{width:50px;height:50px;border-radius:50%;background:var(--bg);border:1px solid var(--line);box-shadow:0 2px 8px rgba(20,30,45,.2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--ink)}
 .fab svg{width:24px;height:24px}
+.fab.orient{flex-direction:column;gap:0;font-size:11px;line-height:1.1}
+.fab.orient svg{width:22px;height:22px}
 .fab.on{background:var(--blue);color:#fff;border-color:var(--blue)}
 
 /* 底部操作列 */
@@ -195,6 +197,7 @@ body.mode-draw #cross{display:block}
 <div class="pill" id="sideLegend"><span><i style="background:#0097A7"></i>左側</span><span><i style="background:#8E44AD"></i>右側</span></div>
 
 <div id="fabs">
+  <button class="fab orient" id="fabOrient" aria-label="切換地圖方向"><svg id="needle" viewBox="0 0 24 24"><path d="M12 2.5l4.2 9.5H7.8z" fill="#C2382F"/><path d="M12 21.5L7.8 12h8.4z" fill="currentColor" opacity=".4"/></svg><span id="orientTxt">前朝上</span></button>
   <button class="fab" id="fabFollow" aria-label="跟隨我的位置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
   <button class="fab" id="fabLayer" aria-label="切換地圖">地圖</button>
   <button class="fab" id="fabEdit" aria-label="手動標示已派">已派</button>
@@ -309,6 +312,9 @@ body.mode-draw #cross{display:block}
     <select data-set="periodic"><option value="0">不提醒</option><option value="20">每 20 秒</option><option value="30">每 30 秒</option><option value="60">每 1 分鐘</option><option value="120">每 2 分鐘</option></select></div>
   <div class="set col"><div class="top"><label>說話速度</label><span class="val" data-show="rate"></span></div><input type="range" min="0.7" max="1.5" step="0.05" data-set="rate"></div>
   <div class="btnrow"><button class="btn" id="ttsTest">試聽語音</button></div>
+  <h3>地圖方向</h3>
+  <div class="set col"><div class="top"><label>導航時的地圖<small>固定小藍點：小藍點在畫面中間，地圖跟著轉，前進方向永遠朝上。固定地圖：北方朝上，地圖不轉。地圖右側的指北針按鈕也能切換。</small></label></div>
+    <select data-set="orient"><option value="heading">固定小藍點（前進方向朝上）</option><option value="north">固定地圖（北方朝上）</option></select></div>
   <h3>定位</h3>
   <div class="set col"><div class="top"><label>GPS 誤差上限<small>誤差比這個大的定位會被忽略</small></label><span class="val" data-show="maxAcc"></span></div><input type="range" min="15" max="80" step="5" data-set="maxAcc"></div>
   <div class="set col"><div class="top"><label>偏離路線判定<small>離路線超過這個距離就重新規劃</small></label><span class="val" data-show="offRoute"></span></div><input type="range" min="15" max="60" step="5" data-set="offRoute"></div>
@@ -334,6 +340,7 @@ body.mode-draw #cross{display:block}
 <div class="listen" id="listen"><div class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div><p id="listenText">請說指令</p><small>暫停、繼續、重複、跳過、重新規劃、進度、標記有狗、我在○○巷○號</small></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"></script>
 <script>
 /* ===== 派報系統 核心邏輯（無畫面相依，可單獨測試） ===== */
 const Core = (() => {
@@ -953,7 +960,7 @@ const Core = (() => {
     set(k, v) { try { localStorage.setItem('pb_' + k, JSON.stringify(v)); return true; } catch (e) { toast('手機儲存空間不夠，這筆資料沒有存起來'); return false; } },
     del(k) { try { localStorage.removeItem('pb_' + k); } catch (e) { /* 無 */ } },
   };
-  const DEF = { preDist: 30, nearDist: 10, periodic: 0, rate: 1.0, maxAcc: 40, offRoute: 25, returnToStart: false, includePaths: true, showAddr: true, earBtn: false, layer: 'osm' };
+  const DEF = { preDist: 30, nearDist: 10, periodic: 0, rate: 1.0, maxAcc: 40, offRoute: 25, returnToStart: false, includePaths: true, showAddr: true, earBtn: false, layer: 'osm', orient: 'heading' };
   const S = Object.assign({}, DEF, LS.get('settings', {}));
   const saveSettings = () => LS.set('settings', S);
 
@@ -992,10 +999,12 @@ const Core = (() => {
     st.mode = m;
     document.body.className = 'mode-' + m;
     map.getContainer().style.cursor = (m === 'draw' || m === 'pick' || m === 'edit') ? 'crosshair' : '';
+    if (typeof updateHeading === 'function') updateHeading(true);
   }
 
   /* ---------- 地圖 ---------- */
-  const map = L.map('map', { zoomControl: false, preferCanvas: true, maxZoom: 21, attributionControl: true }).setView([25.0137, 121.4627], 16);
+  const map = L.map('map', { zoomControl: false, preferCanvas: true, maxZoom: 21, attributionControl: true, rotate: true, bearing: 0, rotateControl: false, touchRotate: false, shiftKeyRotate: false, compassBearing: false }).setView([25.0137, 121.4627], 16);
+  const canRotate = typeof map.setBearing === 'function' && !!map._rotate;
   const tiles = {
     osm: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 19, attribution: '© OpenStreetMap 貢獻者' }),
     emap: L.tileLayer('https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, attribution: '© 內政部國土測繪中心' }),
@@ -1168,23 +1177,98 @@ const Core = (() => {
   }
 
   /* ---------- 我的位置 ---------- */
+  /* ---------- 地圖方向：固定小藍點（前進方向朝上）／固定地圖（北方朝上） ---------- */
+  let mapBear = 0, wantBear = 0, rafOn = false, compass = null, compassAsked = false, lastCompassUpd = 0;
+  const reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function headingActive() {
+    return canRotate && S.orient === 'heading' && st.follow && (st.mode === 'idle' || st.mode === 'nav' || st.mode === 'pick');
+  }
+  // 目前前進方向（地理方位，0 = 北）
+  function currentHeading() {
+    if (nav && nav.route && !nav.far && nav.tr) {
+      const r = nav.route, s = Math.min(nav.tr.s, r.total - 1);
+      const a = C.pointAtRoute(r, s), b = C.pointAtRoute(r, Math.min(r.total, s + 6));
+      if (C.dist(a, b) > 1.5 && !(nav.tr.offCount > 0)) return C.bearing(a, b);
+    }
+    if (gps.bear != null && gps.speed > 0.6) return gps.bear;
+    if (compass && Date.now() - compass.t < 3000) return compass.h;
+    return gps.bear;
+  }
+  function updateHeading(force) {
+    if (!canRotate) return;
+    let target;
+    if (headingActive()) {
+      const h = currentHeading(); if (h == null) return;
+      target = -h;
+    } else if (S.orient !== 'heading' || st.mode === 'draw' || st.mode === 'edit') target = 0;
+    else return; // 手動拖過地圖：維持目前角度
+    const diff = Math.abs(((target - wantBear) % 360 + 540) % 360 - 180);
+    if (!force && diff < 3) return;
+    wantBear = target;
+    if (reduceMotion) { mapBear = wantBear; map.setBearing(mapBear); updateNeedle(); return; }
+    if (!rafOn) { rafOn = true; requestAnimationFrame(stepBear); }
+  }
+  function stepBear() {
+    const d = ((wantBear - mapBear) % 360 + 540) % 360 - 180;
+    if (Math.abs(d) < 0.4) { mapBear = wantBear; rafOn = false; }
+    else mapBear += d * 0.2;
+    map.setBearing(mapBear); updateNeedle();
+    if (rafOn) requestAnimationFrame(stepBear);
+  }
+  function updateNeedle() {
+    const n = $('#needle'); if (n) n.style.transform = `rotate(${canRotate ? mapBear : 0}deg)`;
+  }
+  function applyOrient(say) {
+    const h = S.orient === 'heading' && canRotate;
+    $('#orientTxt').textContent = h ? '前朝上' : '北朝上';
+    $('#fabOrient').classList.toggle('on', h);
+    if (h) { st.follow = true; $('#fabFollow').classList.add('on'); if (gps.fix) map.panTo([gps.fix.lat, gps.fix.lon]); }
+    updateHeading(true);
+    if (say) toast(h ? '固定小藍點：前進方向朝上' : '固定地圖：北方朝上');
+  }
+  // 指南針（站著不動時用來判斷方向；iPhone 要在按按鈕時取得授權）
+  function enableCompass() {
+    if (compassAsked || !window.DeviceOrientationEvent) return;
+    compassAsked = true;
+    const add = () => window.addEventListener('deviceorientation', onOrient, true);
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') DeviceOrientationEvent.requestPermission().then(r => { if (r === 'granted') add(); }).catch(() => {});
+    else add();
+  }
+  function onOrient(e) {
+    let h = null;
+    if (e.webkitCompassHeading != null && !isNaN(e.webkitCompassHeading)) h = e.webkitCompassHeading;
+    else if (e.absolute && e.alpha != null) h = (360 - e.alpha) % 360;
+    if (h == null) return;
+    const so = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+    compass = { h: (h + so + 360) % 360, t: Date.now() };
+    if (Date.now() - lastCompassUpd > 250) { lastCompassUpd = Date.now(); updateHeading(); if (meMarker) drawMeCone(); }
+  }
+  function drawMeCone() {
+    const el = meMarker && meMarker.getElement(); if (!el) return;
+    const cone = el.querySelector('.cone'), hb = currentHeading();
+    cone.style.display = hb == null ? 'none' : 'block';
+    if (hb != null) cone.style.transform = `rotate(${hb}deg)`;
+  }
+
   let meMarker = null, accCircle = null;
   function drawMe() {
     const f = gps.fix; if (!f) return;
     const ll = [f.lat, f.lon];
     if (!meMarker) {
       accCircle = L.circle(ll, { renderer: cv, radius: f.acc, color: '#2B7BE4', weight: 1, fillOpacity: 0.08, interactive: false }).addTo(L_me);
-      meMarker = L.marker(ll, { interactive: false, keyboard: false, icon: L.divIcon({ className: '', html: '<div class="me"><div class="cone"></div></div>', iconSize: [22, 22], iconAnchor: [11, 11] }) }).addTo(L_me);
+      meMarker = L.marker(ll, { interactive: false, keyboard: false, rotateWithView: true, zIndexOffset: 2000, icon: L.divIcon({ className: '', html: '<div class="me"><div class="cone"></div></div>', iconSize: [22, 22], iconAnchor: [11, 11] }) }).addTo(L_me);
     }
     meMarker.setLatLng(ll); accCircle.setLatLng(ll); accCircle.setRadius(f.acc);
     const el = meMarker.getElement();
     if (el) {
       const dot = el.querySelector('.me'), cone = el.querySelector('.cone');
       dot.classList.toggle('fixed', !!gps.corr);
-      cone.style.display = gps.bear == null ? 'none' : 'block';
-      if (gps.bear != null) cone.style.transform = `rotate(${gps.bear}deg)`;
+      const hb = currentHeading();
+      cone.style.display = hb == null ? 'none' : 'block';
+      if (hb != null) cone.style.transform = `rotate(${hb}deg)`;
     }
     if (st.follow) map.panTo(ll, { animate: true, duration: 0.4 });
+    updateHeading();
   }
   function setPill(cls, text) {
     const p = $('#gpsPill'); p.className = 'pill ' + cls + (gps.corr ? ' fixed' : '');
@@ -1356,6 +1440,7 @@ const Core = (() => {
     if (!st.net) { toast('這個區塊還沒有圖資，正在重新下載'); await downloadNet(); if (!st.net) return; }
     const req = remainingReq();
     if (!req.length) { toast('這個區塊已經全部派完。要重新開始，請到「我的區塊」按「重設進度」。', 5000); return; }
+    enableCompass();
     // 在點擊當下啟動語音（iPhone 規定）
     say('準備開始', { noLast: true });
     beep(660, 60);
@@ -1434,7 +1519,7 @@ const Core = (() => {
     // 行進方向箭頭（每 35 公尺一個）
     for (let d = 15; d < r.total - 5; d += 35) {
       const a = C.pointAtRoute(r, d), b = C.pointAtRoute(r, Math.min(r.total, d + 3));
-      const mk = L.marker(a, { interactive: false, keyboard: false, icon: L.divIcon({ className: '', html: `<div class="rarr" style="transform:rotate(${C.bearing(a, b)}deg)"></div>`, iconSize: [0, 0] }) }).addTo(L_arrows);
+      const mk = L.marker(a, { interactive: false, keyboard: false, rotateWithView: true, icon: L.divIcon({ className: '', html: `<div class="rarr" style="transform:rotate(${C.bearing(a, b)}deg)"></div>`, iconSize: [0, 0] }) }).addTo(L_arrows);
       mk._d = d; arrowMk.push(mk);
     }
     // 起點、終點
@@ -1585,6 +1670,7 @@ const Core = (() => {
     if (!nav.far) announce(r.s, now);
     checkMarks(p, now);
     updateCard(r.s); updateRouteLine(r.s);
+    updateHeading(); drawMeCone();
   }
 
   function announce(s, now) {
@@ -1831,9 +1917,11 @@ const Core = (() => {
     el.addEventListener(el.type === 'range' ? 'input' : 'change', () => {
       const k = el.dataset.set;
       const old = S[k];
-      S[k] = el.type === 'checkbox' ? el.checked : Number(el.value);
+      const v = el.value;
+      S[k] = el.type === 'checkbox' ? el.checked : (v !== '' && !isNaN(v) ? Number(v) : v);
       saveSettings(); syncSettingsUI();
       if (k === 'showAddr') renderAddrs();
+      if (k === 'orient') applyOrient(true);
       if (k === 'includePaths' && old !== S[k] && st.block) { st.net = null; downloadNet(); }
       if (k === 'earBtn' && nav) setupEarButtons(S.earBtn);
     });
@@ -1887,8 +1975,10 @@ const Core = (() => {
   $('#fabEdit').onclick = () => { if (!st.net) { toast('先選一個有圖資的區塊'); return; } setMode('edit'); };
   $('#editDone').onclick = () => setMode('idle');
   $('#fabLayer').onclick = () => openSheet('shLayer');
+  $('#fabOrient').onclick = () => { enableCompass(); S.orient = S.orient === 'heading' ? 'north' : 'heading'; saveSettings(); syncSettingsUI(); applyOrient(true); };
   $('#fabFollow').onclick = () => {
-    st.follow = true; $('#fabFollow').classList.add('on');
+    enableCompass();
+    st.follow = true; $('#fabFollow').classList.add('on'); setTimeout(() => updateHeading(true), 450);
     if (gps.fix) map.setView([gps.fix.lat, gps.fix.lon], Math.max(map.getZoom(), 17));
     else toast('還在等 GPS 定位');
   };
@@ -1914,6 +2004,7 @@ const Core = (() => {
   if (last && st.blocks.some(b => b.id === last)) selectBlock(last);
   else renderBlocks();
   $('#fabFollow').classList.add('on');
+  applyOrient(false);
   startGPS();
   if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
     toast('要用 https 網址開啟，iPhone 才會給定位', 6000);
