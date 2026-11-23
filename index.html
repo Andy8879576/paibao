@@ -85,9 +85,12 @@ body.mode-nav #fabEdit,body.mode-nav #fabLayer{display:none}
 .modebar p{margin:0 0 10px;font-size:16px;font-weight:600;line-height:1.4}
 .modebar .row{display:flex;gap:8px}
 .modebar .row .dbtn{flex:1;min-height:50px}
-body.mode-draw #drawbar,body.mode-pick #pickbar,body.mode-edit #editbar{display:block}
-body.mode-draw .dock,body.mode-pick .dock,body.mode-edit .dock{display:none!important}
+body.mode-draw #drawbar,body.mode-pick #pickbar,body.mode-edit #editbar,body.mode-bedit #beditbar{display:block}
+body.mode-draw .dock,body.mode-pick .dock,body.mode-edit .dock,body.mode-bedit .dock{display:none!important}
 body.mode-draw #fabs,body.mode-pick #fabs,body.mode-edit #fabs{bottom:calc(env(safe-area-inset-bottom) + 150px)}
+body.mode-bedit #fabs{bottom:calc(env(safe-area-inset-bottom) + 200px)}
+body.mode-bedit #fabEdit{display:none}
+body.mode-draw #toast,body.mode-pick #toast,body.mode-edit #toast,body.mode-bedit #toast{bottom:calc(env(safe-area-inset-bottom) + 230px)}
 
 /* 底部面板 */
 #backdrop{position:fixed;inset:0;background:rgba(10,15,22,.38);z-index:900;display:none}
@@ -155,6 +158,12 @@ textarea{min-height:130px;font-family:ui-monospace,Menlo,monospace;font-size:15p
 body.mode-nav #sideLegend{display:flex}
 #sideLegend span{display:flex;align-items:center;gap:6px}
 #sideLegend i{display:inline-block;width:18px;height:6px;border-radius:3px}
+.vtx.sel{background:#C2382F;color:#fff;border-color:#fff}
+.mid{width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.9);border:2px dashed var(--blue);color:var(--blue);font:700 16px/17px var(--font);text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.3);cursor:pointer}
+.blockchip small .ver{margin-left:8px;opacity:.75}
+#updBar{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 74px);z-index:1100;display:none;background:#163B78;color:#fff;border-radius:12px;padding:10px 14px;font-size:15px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,.3);white-space:nowrap}
+body.mode-nav #updBar{top:auto;bottom:calc(env(safe-area-inset-bottom) + 250px)}
+.verline{font-size:14px;color:var(--muted);margin:18px 0 4px;line-height:1.6}
 .vtx{width:26px;height:26px;border-radius:50%;background:#fff;border:3px solid var(--blue);color:var(--blue);font:700 12px/20px var(--font);text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.35);cursor:grab}
 .modebar p.sub{font-size:13px;font-weight:400;color:var(--muted);margin:-4px 0 10px}
 #cross{position:fixed;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;z-index:450;pointer-events:none;display:none}
@@ -181,7 +190,7 @@ body.mode-draw #cross{display:block}
 <div id="map"></div>
 
 <header id="top">
-  <button class="blockchip" id="btnBlock" aria-label="選擇區塊"><small>目前區塊</small><b id="blockName">還沒有區塊</b></button>
+  <button class="blockchip" id="btnBlock" aria-label="選擇區塊"><small>目前區塊<span class="ver" id="verChip">v1.5.0</span></small><b id="blockName">還沒有區塊</b></button>
   <div class="pill" id="gpsPill"><i></i><span>GPS 定位中</span></div>
 </header>
 
@@ -230,6 +239,11 @@ body.mode-draw #cross{display:block}
 <div class="modebar" id="pickbar">
   <p>在地圖上點你現在站的位置。</p>
   <div class="row"><button class="dbtn" id="pickCancel">取消</button></div>
+</div>
+<div class="modebar" id="beditbar">
+  <p id="beditTip">修改區塊範圍</p>
+  <p class="sub">放大地圖後，拖動白色圓點調整邊界；點兩點中間的＋可以加點；點圓點可選取後刪除。點街道可以單獨「加入」或「排除」（橘色＝要派，灰色＝不派）。</p>
+  <div class="row"><button class="dbtn" id="beUndo">復原</button><button class="dbtn" id="beDel">刪除選取點</button><button class="dbtn" id="beCancel">取消</button><button class="dbtn primary" id="beSave">儲存</button></div>
 </div>
 <div class="modebar" id="editbar">
   <p>點一下街道，切換「已派」或「未派」。</p>
@@ -326,6 +340,8 @@ body.mode-draw #cross{display:block}
   <h3>資料</h3>
   <p class="note">區塊、派報進度和標記都存在這支手機的 Safari 裡。清除 Safari 網站資料會一起刪掉。</p>
   <div class="btnrow"><button class="btn danger" id="wipeAll">刪除所有資料</button></div>
+  <p class="verline">派報系統　版本 <b id="verText">v1.5.0</b>（2026-11-23）<br><span id="verStatus">尚未檢查更新</span></p>
+  <div class="btnrow"><button class="btn" id="verCheck">檢查更新</button></div>
 </section>
 
 <section class="sheet" id="shConfirm" role="alertdialog" aria-labelledby="cfMsg">
@@ -335,6 +351,7 @@ body.mode-draw #cross{display:block}
   <div class="btnrow"><button class="btn" id="cfCancel" style="flex:1">取消</button><button class="btn primary" id="cfOk" style="flex:1">確定</button></div>
 </section>
 
+<button id="updBar" type="button">有新版本，按這裡更新</button>
 <div id="toast" role="status"></div>
 <div id="busy"><div><span class="spin"></span><span id="busyText">處理中</span></div></div>
 <div class="listen" id="listen"><div class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div><p id="listenText">請說指令</p><small>暫停、繼續、重複、跳過、重新規劃、進度、標記有狗、我在○○巷○號</small></div>
@@ -951,6 +968,7 @@ const Core = (() => {
 (() => {
   'use strict';
   const C = Core;
+  const APP_VERSION = '1.5.0', APP_DATE = '2026-11-23';
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
 
@@ -1036,6 +1054,7 @@ const Core = (() => {
     L_blocks.clearLayers();
     for (const b of st.blocks) {
       if (!b.show) continue;
+      if (st.mode === 'bedit' && st.block && b.id === st.block.id) continue; // 修改中：只顯示編輯中的框
       const cur = st.block && st.block.id === b.id;
       L.polygon(b.poly, { renderer: cv, color: cur ? '#1F4E9E' : '#56657A', weight: cur ? 3 : 2, dashArray: '8 6', fillColor: '#1F4E9E', fillOpacity: cur ? 0.05 : 0.02, interactive: false }).addTo(L_blocks);
     }
@@ -1068,10 +1087,21 @@ const Core = (() => {
     LS.set('curBlock', id);
     loadProgress();
     const raw = LS.get('net_' + id, null);
-    st.net = raw ? C.buildNetwork(raw, b.poly, { includePaths: S.includePaths }) : null;
+    st.net = raw ? buildNet(raw, b) : null;
     renderBlocks(); renderNet(); renderAddrs();
     if (fit) map.fitBounds(L.latLngBounds(b.poly), { padding: [30, 30] });
     if (!raw) downloadNet();
+  }
+  // 建立路網，並套用使用者對個別街道的「加入／排除」
+  function buildNet(raw, b, poly) {
+    const net = C.buildNetwork(raw, poly || b.poly, { includePaths: S.includePaths });
+    const inc = new Set(b.inc || []), exc = new Set(b.exc || []);
+    for (const c of net.chains) {
+      if (c.virtual) continue;
+      if (exc.has(c.key)) c.req = false;
+      else if (inc.has(c.key)) c.req = true;
+    }
+    return net;
   }
   function createBlock(poly, name) {
     const b = { id: uid(), name: name || '區塊 ' + (st.blocks.length + 1), poly, show: true, t: Date.now() };
@@ -1118,7 +1148,8 @@ const Core = (() => {
     }
     if (st.block !== b) return;
     LS.set('net_' + b.id, raw);
-    st.net = C.buildNetwork(raw, b.poly, { includePaths: S.includePaths });
+    b.dl = C.bbox(b.poly, 200); saveBlocks();
+    st.net = buildNet(raw, b);
     renderNet(); renderAddrs(); renderBlocks();
     const nReq = reqChains().length;
     if (!nReq) toast('這個區塊裡找不到街道。試著把框框畫大一點。', 4500);
@@ -1200,7 +1231,7 @@ const Core = (() => {
     if (headingActive()) {
       const h = currentHeading(); if (h == null) return;
       target = -h;
-    } else if (S.orient !== 'heading' || st.mode === 'draw' || st.mode === 'edit') target = 0;
+    } else if (S.orient !== 'heading' || st.mode === 'draw' || st.mode === 'edit' || st.mode === 'bedit') target = 0;
     else return; // 手動拖過地圖：維持目前角度
     const diff = Math.abs(((target - wantBear) % 360 + 540) % 360 - 180);
     if (!force && diff < 3) return;
@@ -1884,6 +1915,7 @@ const Core = (() => {
         <div class="btnrow">
           ${cur ? '' : '<button class="btn sm primary" data-act="use">使用這個區塊</button>'}
           <button class="btn sm" data-act="show">${b.show ? '隱藏框線' : '顯示框線'}</button>
+          <button class="btn sm" data-act="shape">修改範圍</button>
           <button class="btn sm" data-act="rename">改名</button>
           ${cur ? '<button class="btn sm" data-act="reset">重設進度</button><button class="btn sm" data-act="dl">重新下載圖資</button>' : ''}
           <button class="btn sm danger" data-act="del">刪除</button>
@@ -1895,6 +1927,7 @@ const Core = (() => {
     const id = btn.closest('.blk').dataset.id, b = st.blocks.find(x => x.id === id), act = btn.dataset.act;
     if (act === 'use') { closeSheets(); selectBlock(id); }
     else if (act === 'show') { b.show = !b.show; saveBlocks(); renderBlocks(); renderBlockList(); }
+    else if (act === 'shape') { closeSheets(); if (!st.block || st.block.id !== id) selectBlock(id); startBlockEdit(); }
     else if (act === 'rename') askName('區塊改名', b.name, v => { if (v) { b.name = v; saveBlocks(); renderBlocks(); } });
     else if (act === 'reset') { askConfirm('重設「' + b.name + '」的進度？', '已派、跳過的紀錄會全部清掉，從頭開始。', '重設進度', true).then(ok => { if (!ok) return; st.covered.clear(); st.skipped.clear(); st.hits.clear(); saveProgress(true); renderNet(); renderBlocks(); toast('進度已重設'); }); }
     else if (act === 'dl') { closeSheets(); downloadNet(); }
@@ -1934,11 +1967,119 @@ const Core = (() => {
   };
   $$('#layerBtns .btn').forEach(b => (b.onclick = () => { setLayer(b.dataset.layer); }));
 
+  /* ---------- 修改區塊範圍 ---------- */
+  let be = null; // { poly, inc, exc, sel, undo[], orig }
+  const L_be = L.layerGroup().addTo(map);
+  function startBlockEdit() {
+    if (nav || !st.block) return;
+    const b = st.block;
+    be = { poly: b.poly.map(p => p.slice()), inc: (b.inc || []).slice(), exc: (b.exc || []).slice(), sel: -1, undo: [], orig: { poly: b.poly, inc: b.inc, exc: b.exc } };
+    if (!b.dl) b.dl = C.bbox(b.poly, 200);
+    setMode('bedit');
+    map.fitBounds(L.latLngBounds(b.poly), { padding: [40, 40] });
+    $('#beditTip').textContent = '修改「' + b.name + '」的範圍';
+    renderBlocks(); bePreview();
+  }
+  function beSnap() { be.undo.push({ poly: be.poly.map(p => p.slice()), inc: be.inc.slice(), exc: be.exc.slice() }); if (be.undo.length > 40) be.undo.shift(); }
+  function beDraw() {
+    L_be.clearLayers();
+    const pts = be.poly;
+    L.polygon(pts, { color: '#1F4E9E', weight: 3, dashArray: '8 6', fillColor: '#1F4E9E', fillOpacity: 0.06, interactive: false }).addTo(L_be);
+    const line = L_be.getLayers()[0];
+    pts.forEach((p, i) => {
+      const mk = L.marker(p, { draggable: true, autoPan: true, autoPanPadding: [70, 70], keyboard: false, zIndexOffset: 1000, icon: L.divIcon({ className: '', html: `<div class="vtx${be.sel === i ? ' sel' : ''}">${i + 1}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(L_be);
+      mk.on('dragstart', () => beSnap());
+      mk.on('drag', e => { const ll = e.target.getLatLng(); pts[i] = [ll.lat, ll.lng]; line.setLatLngs(pts); });
+      mk.on('dragend', () => { be.sel = -1; bePreview(); });
+      mk.on('click', () => { be.sel = be.sel === i ? -1 : i; beDraw(); });
+    });
+    // 兩點中間的＋：點一下或拖動就加一個點
+    pts.forEach((p, i) => {
+      const q = pts[(i + 1) % pts.length];
+      const m = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+      const mk = L.marker(m, { draggable: true, keyboard: false, zIndexOffset: 900, icon: L.divIcon({ className: '', html: '<div class="mid">+</div>', iconSize: [22, 22], iconAnchor: [11, 11] }) }).addTo(L_be);
+      const insert = ll => { beSnap(); pts.splice(i + 1, 0, ll); be.sel = i + 1; bePreview(); };
+      mk.on('click', () => insert(m));
+      mk.on('dragend', e => { const ll = e.target.getLatLng(); insert([ll.lat, ll.lng]); });
+    });
+    $('#beDel').disabled = be.sel < 0 || pts.length <= 3; $('#beDel').style.opacity = $('#beDel').disabled ? 0.5 : 1;
+    $('#beUndo').disabled = !be.undo.length; $('#beUndo').style.opacity = be.undo.length ? 1 : 0.5;
+  }
+  // 即時預覽：哪些街道會被派（橘色）
+  function bePreview() {
+    const raw = LS.get('net_' + st.block.id, null);
+    if (raw) {
+      st.net = buildNet(raw, { inc: be.inc, exc: be.exc }, be.poly);
+      renderNet();
+    }
+    beDraw();
+    const [s, w, n, e] = C.bbox(be.poly, 0), d = st.block.dl;
+    be.outside = !d || s < d[0] || w < d[1] || n > d[2] || e > d[3];
+    const nReq = st.net ? st.net.chains.filter(c => c.req).length : 0;
+    $('#beditTip').textContent = `修改「${st.block.name}」：${be.poly.length} 個角，${nReq} 段街道要派` + (be.outside ? '（超出原本圖資，儲存後會重新下載）' : '');
+  }
+  function endBlockEdit(save) {
+    const b = st.block;
+    if (save) {
+      b.poly = be.poly; b.inc = be.inc; b.exc = be.exc; saveBlocks();
+    }
+    const outside = save && be.outside;
+    be = null; L_be.clearLayers(); setMode('idle');
+    if (outside) { selectBlock(b.id, false); downloadNet(); toast('範圍已儲存，重新下載圖資中'); }
+    else { selectBlock(b.id, false); if (save) toast('範圍已儲存'); }
+  }
+  $('#beUndo').onclick = () => { if (!be || !be.undo.length) return; const u = be.undo.pop(); be.poly = u.poly; be.inc = u.inc; be.exc = u.exc; be.sel = -1; bePreview(); };
+  $('#beDel').onclick = () => { if (!be || be.sel < 0 || be.poly.length <= 3) return; beSnap(); be.poly.splice(be.sel, 1); be.sel = -1; bePreview(); };
+  $('#beCancel').onclick = () => { if (be) endBlockEdit(false); };
+  $('#beSave').onclick = () => { if (be) endBlockEdit(true); };
+
+  /* ---------- 版本與更新檢查 ---------- */
+  let newVer = null;
+  async function checkUpdate(manual) {
+    if (manual) $('#verStatus').textContent = '檢查中…';
+    try {
+      const res = await fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' });
+      const t = await res.text();
+      const m = t.match(/APP_VERSION = '([\d.]+)'/);
+      if (!m) throw new Error('no version');
+      const cmp = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); return 0; };
+      if (cmp(m[1], APP_VERSION) > 0) {
+        newVer = m[1];
+        $('#verStatus').textContent = '有新版本 v' + newVer + '，按畫面上方的藍色按鈕更新';
+        $('#updBar').textContent = '有新版本 v' + newVer + '，按這裡更新';
+        $('#updBar').style.display = 'block';
+      } else {
+        $('#verStatus').textContent = '已是最新版本（' + new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }) + ' 檢查）';
+        if (manual) toast('已是最新版本 v' + APP_VERSION);
+      }
+    } catch (e) {
+      $('#verStatus').textContent = '無法檢查更新（可能沒有網路）';
+      if (manual) toast('無法檢查更新，請確認網路');
+    }
+  }
+  $('#updBar').onclick = () => {
+    if (nav) { toast('導航中先不更新，結束導航後再按'); return; }
+    location.replace(location.pathname + '?v=' + (newVer || Date.now()));
+  };
+  $('#verCheck').onclick = () => checkUpdate(true);
+
   /* ---------- 地圖點擊 ---------- */
   map.on('click', e => {
     const p = [e.latlng.lat, e.latlng.lng];
     if (st.mode === 'draw') { addDrawPoint(p); }
     else if (st.mode === 'pick') { setMode(nav ? 'nav' : 'idle'); applyCorrection(p, ''); }
+    else if (st.mode === 'bedit') {
+      if (!be || !st.net) return;
+      const nc = C.nearestChain(st.net, p, 20, c => !c.virtual);
+      if (!nc) { toast('請點在街道上'); return; }
+      const c = st.net.chains[nc.c];
+      beSnap();
+      const inc = new Set(be.inc), exc = new Set(be.exc);
+      if (c.req) { inc.delete(c.key); exc.add(c.key); toast('已排除' + (c.name ? '：' + c.name : '這段街道')); }
+      else { exc.delete(c.key); inc.add(c.key); toast('已加入' + (c.name ? '：' + c.name : '這段街道')); }
+      be.inc = [...inc]; be.exc = [...exc];
+      bePreview();
+    }
     else if (st.mode === 'edit') {
       if (!st.net) return;
       const nc = C.nearestChain(st.net, p, 25, c => c.req);
@@ -2006,6 +2147,8 @@ const Core = (() => {
   $('#fabFollow').classList.add('on');
   applyOrient(false);
   startGPS();
+  setTimeout(() => checkUpdate(false), 2500);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !nav) checkUpdate(false); });
   if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
     toast('要用 https 網址開啟，iPhone 才會給定位', 6000);
   }
