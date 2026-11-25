@@ -682,6 +682,7 @@ const Core = (() => {
     const t = norm(text);
     if (!t) return { cmd: 'none' };
     if (/廁所|洗手間|化妝室|尿尿|上大號/.test(t)) return { cmd: 'toilet' };
+    if (/拍照|照相|拍一張|拍下來/.test(t)) return { cmd: 'photo' };
     if (/下一(個|站|圈)|停車點|停哪|騎到哪/.test(t) && !/號/.test(t)) return { cmd: 'nextpark' };
     // 修正位置：「你報錯了，我現在在萬大路449巷10號這邊」
     if (/[路街巷弄號口段]/.test(t) && /在|位置|報錯|錯了|不對/.test(t)) {

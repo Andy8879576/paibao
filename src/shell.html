@@ -62,7 +62,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 /* 底部操作列 */
 .dock{position:fixed;left:0;right:0;bottom:0;z-index:700;background:var(--bg);border-top:1px solid var(--line);padding:10px 10px calc(env(safe-area-inset-bottom) + 10px);box-shadow:0 -4px 16px rgba(20,30,45,.12)}
-#dockIdle{display:grid;grid-template-columns:1fr 1fr 1.5fr 1fr;gap:8px}
+#dockIdle{display:grid;grid-template-columns:1fr 1fr 1.35fr 1fr 1fr;gap:6px}
+#dockIdle .dbtn{font-size:13px;padding:6px 2px}
+#dockIdle .dbtn.primary{font-size:15px}
+.dbtn.mic{background:#E3ECFA;color:#1F4E9E}
 .dbtn{min-height:58px;border-radius:12px;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:14px;font-weight:600;padding:6px 4px;line-height:1.2}
 .dbtn svg{width:22px;height:22px}
 .dbtn.primary{background:var(--blue);color:#fff;font-size:17px}
@@ -163,6 +166,12 @@ body.mode-nav #sideLegend{display:flex}
 .park.old{background:#8E44AD;width:32px;height:32px;font-size:14px;opacity:.9}
 .wc{font-size:20px;line-height:26px;text-align:center;width:26px;height:26px;background:#fff;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.4)}
 .set input[type=number]{width:100%;font:inherit;font-size:22px;font-weight:700;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);margin-top:8px}
+.pmk{width:30px;height:30px;border-radius:8px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45);background:#263238 center/cover no-repeat}
+.pview{width:100%;max-height:46vh;object-fit:contain;border-radius:12px;background:#111;display:block}
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.pgrid button{aspect-ratio:1;border-radius:10px;background:#263238 center/cover no-repeat;position:relative;overflow:hidden}
+.pgrid button span{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);color:#fff;font-size:11px;padding:2px 4px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.leaflet-popup-content img{width:200px;max-height:220px;object-fit:cover;border-radius:8px;display:block;margin:6px 0}
 .vtx.sel{background:#C2382F;color:#fff;border-color:#fff}
 .mid{width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.9);border:2px dashed var(--blue);color:var(--blue);font:700 16px/17px var(--font);text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.3);cursor:pointer}
 .blockchip small .ver{margin-left:8px;opacity:.75}
@@ -195,7 +204,7 @@ body.mode-draw #cross{display:block}
 <div id="map"></div>
 
 <header id="top">
-  <button class="blockchip" id="btnBlock" aria-label="選擇區塊"><small>目前區塊<span class="ver" id="verChip">v1.6.0</span></small><b id="blockName">還沒有區塊</b></button>
+  <button class="blockchip" id="btnBlock" aria-label="選擇區塊"><small>目前區塊<span class="ver" id="verChip">v1.6.1</span></small><b id="blockName">還沒有區塊</b></button>
   <div class="pill" id="gpsPill"><i></i><span>GPS 定位中</span></div>
 </header>
 
@@ -213,6 +222,7 @@ body.mode-draw #cross{display:block}
 <div id="fabs">
   <button class="fab orient" id="fabOrient" aria-label="切換地圖方向"><svg id="needle" viewBox="0 0 24 24"><path d="M12 2.5l4.2 9.5H7.8z" fill="#C2382F"/><path d="M12 21.5L7.8 12h8.4z" fill="currentColor" opacity=".4"/></svg><span id="orientTxt">前朝上</span></button>
   <button class="fab" id="fabFollow" aria-label="跟隨我的位置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+  <button class="fab" id="fabCam" aria-label="拍照"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
   <button class="fab" id="fabWC" aria-label="找最近的廁所">廁所</button>
   <button class="fab" id="fabRec" aria-label="關閉上次路徑" style="display:none;background:#8E44AD;color:#fff;border-color:#8E44AD">紀錄✕</button>
   <button class="fab" id="fabLayer" aria-label="切換地圖">地圖</button>
@@ -223,6 +233,7 @@ body.mode-draw #cross{display:block}
   <button class="dbtn" id="btnDraw"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18 8 5l9 3 3 10z"/><circle cx="4" cy="18" r="1.5" fill="currentColor"/><circle cx="8" cy="5" r="1.5" fill="currentColor"/><circle cx="17" cy="8" r="1.5" fill="currentColor"/></svg>圈選區塊</button>
   <button class="dbtn" id="btnBlocks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>我的區塊</button>
   <button class="dbtn primary" id="btnStart"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l13 8-13 8z"/></svg>開始派報</button>
+  <button class="dbtn mic" id="btnMicIdle" aria-label="語音指令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>說指令</button>
   <button class="dbtn" id="btnSettings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>設定</button>
 </nav>
 
@@ -356,7 +367,7 @@ body.mode-draw #cross{display:block}
   <div class="btnrow"><button class="btn" id="bkExport">匯出備份</button><button class="btn" id="bkImport">用備份還原</button><button class="btn" id="bkRestore160">還原到升級前</button></div>
   <input type="file" id="bkFile" accept=".json,application/json" hidden>
   <div class="btnrow"><button class="btn danger" id="wipeAll">刪除所有資料</button></div>
-  <p class="verline">派報系統　版本 <b id="verText">v1.6.0</b>（2026-11-24）<br><span id="verStatus">尚未檢查更新</span></p>
+  <p class="verline">派報系統　版本 <b id="verText">v1.6.1</b>（2026-11-26）<br><span id="verStatus">尚未檢查更新</span></p>
   <div class="btnrow"><button class="btn" id="verCheck">檢查更新</button></div>
 </section>
 
@@ -398,6 +409,23 @@ body.mode-draw #cross{display:block}
   <div id="wcList"></div>
 </section>
 
+<section class="sheet" id="shPhoto">
+  <div class="grab"></div>
+  <h2>照片</h2>
+  <img class="pview" id="phImg" alt="拍到的照片">
+  <p class="note" id="phInfo"></p>
+  <input type="text" id="phNote" placeholder="備註，例如：信箱在側門、拒收告示">
+  <div class="btnrow"><button class="btn primary" id="phSave" style="flex:1">儲存備註</button><button class="btn" id="phMap" style="flex:1">在地圖上看</button></div>
+  <div class="btnrow"><button class="btn" id="phDl">存到手機相簿</button><button class="btn danger" id="phDel">刪除照片</button></div>
+</section>
+
+<section class="sheet" id="shPhotos">
+  <div class="grab"></div>
+  <h2>這個區塊的照片</h2>
+  <p class="note">照片存在這支手機的 Safari 裡，會記下拍照的位置和時間。點一張可以放大、加備註。</p>
+  <div class="pgrid" id="phGrid"></div>
+</section>
+
 <section class="sheet" id="shConfirm" role="alertdialog" aria-labelledby="cfMsg">
   <div class="grab"></div>
   <h2 id="cfMsg">確定嗎？</h2>
@@ -406,9 +434,10 @@ body.mode-draw #cross{display:block}
 </section>
 
 <button id="updBar" type="button">有新版本，按這裡更新</button>
+<input type="file" id="camInput" accept="image/*" capture="environment" hidden>
 <div id="toast" role="status"></div>
 <div id="busy"><div><span class="spin"></span><span id="busyText">處理中</span></div></div>
-<div class="listen" id="listen"><div class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div><p id="listenText">請說指令</p><small>重複、暫停、繼續、跳過、這條派完了、重新規劃、進度、廁所在哪、下一個停車點、標記有狗、你報錯了我在○○路○號</small></div>
+<div class="listen" id="listen"><div class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div><p id="listenText">請說指令</p><small>拍照請按右側相機按鈕。重複、暫停、繼續、跳過、這條派完了、重新規劃、進度、廁所在哪、下一個停車點、標記有狗、你報錯了我在○○路○號</small></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"></script>

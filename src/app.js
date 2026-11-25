@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const C = Core;
-  const APP_VERSION = '1.6.0', APP_DATE = '2026-11-24';
+  const APP_VERSION = '1.6.1', APP_DATE = '2026-11-26';
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
 
@@ -168,7 +168,7 @@
     loadProgress();
     const raw = LS.get('net_' + id, null);
     st.net = raw ? buildNet(raw, b) : null;
-    renderBlocks(); renderNet(); renderAddrs(); renderWC();
+    renderBlocks(); renderNet(); renderAddrs(); renderWC(); renderPhotos();
     L_rec.clearLayers(); $('#fabRec').style.display = 'none'; sess = null;
     if (fit) map.fitBounds(L.latLngBounds(b.poly), { padding: [30, 30] });
     if (!raw) downloadNet();
@@ -195,6 +195,7 @@
   function deleteBlock(id) {
     st.blocks = st.blocks.filter(b => b.id !== id); saveBlocks();
     for (const k of ['net_', 'prog_', 'wc_', 'sess_', 'rec_']) LS.del(k + id);
+    photoDelBlock(id);
     if (st.block && st.block.id === id) { st.block = null; st.net = null; LS.del('curBlock'); renderNet(); renderAddrs(); }
     renderBlocks();
   }
@@ -830,6 +831,111 @@
     document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
 
+  /* ---------- 拍照（照片存在 IndexedDB，記錄位置與時間） ---------- */
+  let dbp = null;
+  function db() {
+    if (dbp) return dbp;
+    dbp = new Promise((res, rej) => {
+      const r = indexedDB.open('paibao', 1);
+      r.onupgradeneeded = () => { const s0 = r.result.createObjectStore('photos', { keyPath: 'id' }); s0.createIndex('bid', 'bid'); };
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    });
+    return dbp;
+  }
+  async function dbDo(mode, fn) {
+    const d = await db();
+    return new Promise((res, rej) => { const tx = d.transaction('photos', mode), st0 = tx.objectStore('photos'); const out = fn(st0); tx.oncomplete = () => res(out && out.result !== undefined ? out.result : out); tx.onerror = () => rej(tx.error); });
+  }
+  const photoAll = bid => dbDo('readonly', s0 => s0.index('bid').getAll(bid));
+  const photoPut = ph => dbDo('readwrite', s0 => s0.put(ph));
+  const photoDel = id => dbDo('readwrite', s0 => s0.delete(id));
+  async function photoDelBlock(bid) { try { for (const ph of await photoAll(bid)) await photoDel(ph.id); } catch (e) { /* 無 */ } }
+  function shrink(file, max = 1280) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => {
+        const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+        const cvs = document.createElement('canvas'); cvs.width = Math.round(img.naturalWidth * k); cvs.height = Math.round(img.naturalHeight * k);
+        cvs.getContext('2d').drawImage(img, 0, 0, cvs.width, cvs.height);
+        URL.revokeObjectURL(url);
+        cvs.toBlob(b => b ? res(b) : rej(new Error('壓縮失敗')), 'image/jpeg', 0.78);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('讀不到照片')); };
+      img.src = url;
+    });
+  }
+  function placeLabel(p) {
+    if (!st.net) return '';
+    const nc = C.nearestChain(st.net, p, 40, c => !c.virtual), nm = nc ? st.net.chains[nc.c].name : '';
+    const a = C.nearestAddr(st.net, p, 25, nm || undefined);
+    return (nm || '') + (a ? String(a.h).replace(/號$/, '') + '號附近' : nm ? '附近' : '');
+  }
+  const L_photo = L.layerGroup().addTo(map);
+  let photoUrls = [], curPhoto = null;
+  const photoUrl = ph => { const u = URL.createObjectURL(ph.blob); photoUrls.push(u); return u; };
+  async function renderPhotos() {
+    L_photo.clearLayers(); photoUrls.forEach(u => URL.revokeObjectURL(u)); photoUrls = [];
+    if (!st.block) return;
+    let list = []; try { list = await photoAll(st.block.id); } catch (e) { return; }
+    for (const ph of list) {
+      const u = photoUrl(ph);
+      L.marker([ph.lat, ph.lon], { keyboard: false, zIndexOffset: 600, icon: L.divIcon({ className: '', html: `<div class="pmk" style="background-image:url('${u}')"></div>`, iconSize: [30, 30], iconAnchor: [15, 15] }) })
+        .addTo(L_photo).on('click', () => openPhoto(ph));
+    }
+  }
+  function fmtTime(t) { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
+  function openPhoto(ph) {
+    curPhoto = ph;
+    $('#phImg').src = photoUrl(ph);
+    $('#phInfo').textContent = `${fmtTime(ph.t)}　${ph.place || '位置 ' + ph.lat.toFixed(5) + ', ' + ph.lon.toFixed(5)}${ph.acc ? '（GPS ±' + Math.round(ph.acc) + ' 公尺）' : ''}`;
+    $('#phNote').value = ph.note || '';
+    openSheet('shPhoto');
+  }
+  $('#fabCam').onclick = () => {
+    if (!st.block) { toast('先選一個區塊，照片會存在那個區塊裡'); return; }
+    $('#camInput').value = ''; $('#camInput').click();
+  };
+  $('#camInput').onchange = async () => {
+    const f = $('#camInput').files[0]; if (!f || !st.block) return;
+    const p = gps.fix ? [gps.fix.lat, gps.fix.lon] : [map.getCenter().lat, map.getCenter().lng];
+    busy(true, '存照片中…');
+    try {
+      const blob = await shrink(f);
+      const ph = { id: uid(), bid: st.block.id, lat: p[0], lon: p[1], acc: gps.fix ? gps.fix.acc : null, t: Date.now(), note: '', place: placeLabel(p), blob };
+      await photoPut(ph);
+      busy(false);
+      await renderPhotos();
+      if (nav) { say('照片存好了', { noLast: true }); toast('照片存好了' + (ph.place ? '：' + ph.place : '')); }
+      else openPhoto(ph);
+    } catch (e) { busy(false); toast('照片沒有存成功：' + (e.message || '手機空間不足')); }
+  };
+  $('#phSave').onclick = async () => { if (!curPhoto) return; curPhoto.note = $('#phNote').value.trim(); await photoPut(curPhoto); closeSheets(); toast('備註已儲存'); };
+  $('#phMap').onclick = () => { if (!curPhoto) return; closeSheets(); st.follow = false; $('#fabFollow').classList.remove('on'); map.setView([curPhoto.lat, curPhoto.lon], 19); };
+  $('#phDl').onclick = () => {
+    if (!curPhoto) return;
+    const a = document.createElement('a'); a.href = photoUrl(curPhoto); a.download = `派報_${fmtTime(curPhoto.t).replace(/[\/: ]/g, '')}.jpg`;
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  $('#phDel').onclick = () => {
+    if (!curPhoto) return;
+    const ph = curPhoto;
+    askConfirm('刪除這張照片？', '刪掉就找不回來。', '刪除照片', true).then(async ok => { if (!ok) return; closeSheets(); await photoDel(ph.id); curPhoto = null; await renderPhotos(); toast('照片已刪除'); });
+  };
+  async function openPhotoList() {
+    if (!st.block) return;
+    let list = []; try { list = await photoAll(st.block.id); } catch (e) { /* 無 */ }
+    list.sort((a, b) => b.t - a.t);
+    $('#phGrid').innerHTML = list.length ? '' : '<div class="empty" style="grid-column:1/-1">還沒有照片。按地圖右側的相機按鈕拍照。</div>';
+    for (const ph of list) {
+      const b0 = document.createElement('button');
+      b0.style.backgroundImage = `url('${photoUrl(ph)}')`;
+      b0.innerHTML = `<span>${esc(fmtTime(ph.t) + ' ' + (ph.note || ph.place || ''))}</span>`;
+      b0.onclick = () => openPhoto(ph);
+      $('#phGrid').appendChild(b0);
+    }
+    openSheet('shPhotos');
+  }
+
   /* ---------- 公共廁所 ---------- */
   const L_wc = L.layerGroup().addTo(map);
   async function fetchWC(b, quiet) {
@@ -1212,6 +1318,7 @@
         say(m, { noLast: true }); toast(m); break;
       }
       case 'toilet': findToilet(); break;
+      case 'photo': { const m = 'iPhone 規定要用手按才能開相機，請按右邊的相機按鈕'; say(m, { noLast: true }); toast(m); break; }
       case 'nextpark': sayNextPark(); break;
       case 'streetdone': streetDone(); break;
       case 'mark': addMark(c.arg, c.arg === 'other' ? c.note : ''); break;
@@ -1326,7 +1433,7 @@
           <button class="btn sm" data-act="show">${b.show ? '隱藏框線' : '顯示框線'}</button>
           <button class="btn sm" data-act="shape">修改範圍</button>
           <button class="btn sm" data-act="rename">改名</button>
-          ${cur ? '<button class="btn sm primary" data-act="done">記錄完成</button><button class="btn sm" data-act="recs">派報紀錄</button><button class="btn sm" data-act="reset">重設進度</button><button class="btn sm" data-act="dl">重新下載圖資</button>' : ''}
+          ${cur ? '<button class="btn sm primary" data-act="done">記錄完成</button><button class="btn sm" data-act="recs">派報紀錄</button><button class="btn sm" data-act="photos">照片</button><button class="btn sm" data-act="reset">重設進度</button><button class="btn sm" data-act="dl">重新下載圖資</button>' : ''}
           <button class="btn sm danger" data-act="del">刪除</button>
         </div></div>`;
     }).join('');
@@ -1342,6 +1449,7 @@
     else if (act === 'dl') { closeSheets(); downloadNet(); }
     else if (act === 'done') { closeSheets(); askCompleteBlock(false); }
     else if (act === 'recs') { renderRecList(); openSheet('shRecs'); }
+    else if (act === 'photos') openPhotoList();
     else if (act === 'del') { askConfirm('刪除「' + b.name + '」？', '區塊、圖資和派報進度會一起刪除，刪掉就找不回來。', '刪除區塊', true).then(ok => { if (!ok) return; deleteBlock(id); toast('已刪除「' + b.name + '」'); }); }
   });
 
@@ -1611,6 +1719,7 @@
     else toast('還在等 GPS 定位');
   };
   $('#btnMic').onclick = () => listen();
+  $('#btnMicIdle').onclick = () => listen();
   $('#btnRepeat').onclick = () => doCmd({ cmd: 'repeat' });
   $('#btnPause').onclick = () => doCmd({ cmd: nav && nav.paused ? 'resume' : 'pause' });
   $('#btnReroute').onclick = () => doCmd({ cmd: 'reroute' });
