@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const C = Core;
-  const APP_VERSION = '1.7.1', APP_DATE = '2026-11-26';
+  const APP_VERSION = '1.7.2', APP_DATE = '2026-11-26';
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
 
@@ -32,6 +32,7 @@
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* 無 */ }
     // 直走時定時提醒：舊設定是 0 的改成每 30 秒說「繼續前進」
     if (!S._v || S._v < 160) { if (!S.periodic) S.periodic = 30; S._v = 160; saveSettings(); }
+    if (S._v < 172) { S.showAddr = false; S.showWC = false; S._v = 172; saveSettings(); } // 門牌、廁所改成要用時再顯示
   })();
 
   const MARK = {
@@ -252,14 +253,23 @@
   }
 
   /* ---------- 路網顯示 ---------- */
-  function chainStyle(c) {
+  // 導航中只凸顯這一圈的街道，其他的淡化成虛線
+  let focusKeys = null;
+  function setFocus() { focusKeys = nav && nav.loop ? new Set(nav.loop.items.map(it => st.net.chains[it.c].key)) : null; }
+  function fade(o, c) {
+    if (!focusKeys || focusKeys.has(c.key)) return o;
+    return Object.assign({}, o, { weight: Math.min(o.weight, 2), opacity: o.opacity * 0.35, dashArray: '1 6' });
+  }
+  function chainStyle(c) { return fade(chainStyle0(c), c); }
+  function chainStyle0(c) {
     if (!c.req) return { color: '#7D8796', weight: 2, opacity: 0.45, dashArray: null };
     if (st.covered.has(c.key)) return { color: '#2E9E5B', weight: 5, opacity: 0.9, dashArray: null };
     if (st.skipped.has(c.key)) return { color: '#AEB6C1', weight: 4, opacity: 0.9, dashArray: '4 7' };
     return { color: '#F28C28', weight: 5, opacity: 0.92, dashArray: null };
   }
   const RED = '#D7263D', BLACK = '#1E242C', TODO = '#F28C28';
-  function sideStyle(c, sd) {
+  function sideStyle(c, sd) { return fade(sideStyle0(c, sd), c); }
+  function sideStyle0(c, sd) {
     if (!c.req) return { color: '#7D8796', weight: 2, opacity: 0.45, dashArray: null };
     if (st.skipped.has(c.key)) return { color: '#AEB6C1', weight: 3, opacity: 0.9, dashArray: '4 7' };
     if (sideDone(c, sd)) return { color: (sd === 'f') === c.fShun ? RED : BLACK, weight: 4, opacity: 0.95, dashArray: null };
@@ -293,8 +303,10 @@
     L_addr.clearLayers();
     if (!S.showAddr || !st.net || map.getZoom() < 18) return;
     const bd = map.getBounds().pad(0.1); let n = 0;
+    const g = nav ? gpsStreet() : null, only = g && g.name ? C.normRoad(g.name) : null;
     for (const a of st.net.addrs) {
       if (!bd.contains([a.lat, a.lon])) continue;
+      if (only && C.normRoad(a.s || '') !== only) continue;
       if (++n > 300) break;
       const h = String(a.h).replace(/號$/, '');
       L.marker([a.lat, a.lon], { interactive: false, keyboard: false, icon: L.divIcon({ className: '', html: `<span class="hn">${esc(h)}</span>`, iconSize: [0, 0] }) }).addTo(L_addr);
@@ -645,6 +657,7 @@
     st.follow = true; $('#fabFollow').classList.add('on');
     if (f) map.setView(start, Math.max(map.getZoom(), 18));
     drawPark();
+    setFocus(); renderNet();
     drawRoute();
     sessStart();
     const m0 = route.maneuvers[0];
@@ -661,7 +674,7 @@
     if (!nav) return;
     saveProgress(true); sessSave(true);
     hfStop();
-    nav = null; L_route.clearLayers(); L_arrows.clearLayers(); map.removeLayer(L_arrows); sideL = sideR = routeAhead = null;
+    nav = null; focusKeys = null; renderNet(); L_route.clearLayers(); L_arrows.clearLayers(); map.removeLayer(L_arrows); sideL = sideR = routeAhead = null;
     L_park.clearLayers();
     if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
     if (silent) silent.pause();
@@ -1433,7 +1446,7 @@
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null;
   // 聽到一句話：回傳 'done'（處理完）、'more'（還要繼續聽，例如相機開著或等地址）、'unknown'（聽不懂）、'echo'（是自己念的）
-  let awaitAddr = 0;
+  let awaitAddr = 0, pendingCmd = null;
   const heard = LS.get('heard', []);
   function logHeard(t, what) { heard.unshift({ t: Date.now(), s: t, r: what }); heard.length = Math.min(heard.length, 15); LS.set('heard', heard); }
   function isEcho(t) {
@@ -1453,14 +1466,47 @@
       correctByText(addr);
       return 'done';
     }
+    // 正在等「是／不是」
+    if (pendingCmd && Date.now() - pendingCmd.t < 20000) {
+      const n0 = C.norm(t0);
+      if (/^(是|對|好|沒錯|嗯|要|確定|正確|可以|OK|ok|Yes|yes|對的|是的|沒問題)/.test(n0) && !/^(不是|不對|不要)/.test(n0)) {
+        const pc = pendingCmd; pendingCmd = null;
+        logHeard(t0, '確認：' + (CMD_NAME[pc.cmd] || pc.cmd));
+        doCmd({ cmd: pc.cmd }, pc.raw);
+        return cam.on || awaitAddr ? 'more' : 'done';
+      }
+      if (/^(不是|不對|不要|錯了|錯|否|取消|算了)/.test(n0)) {
+        pendingCmd = null;
+        const rest = n0.replace(/^(不是|不對|不要|錯了|錯|否|取消|算了)+[，,]?(請|我要|是要|要|幫我)?/, '');
+        if (!rest) { say('好，請再說一次要做什麼', { noLast: true }); logHeard(t0, '不是，等重說'); return 'more'; }
+        return handleHeard([rest]);
+      }
+      pendingCmd = null; // 說了別的：當成新的指令
+    }
     let c = null, raw = t0;
     for (const a of alts) { const x = C.parseCommand(a); if (x.cmd !== 'unknown' && x.cmd !== 'none') { c = x; raw = a; break; } }
-    if (!c) { logHeard(t0, '聽不懂'); return 'unknown'; }
-    logHeard(raw, CMD_NAME[c.cmd] || c.cmd);
-    doCmd(c, raw);
-    return cam.on || awaitAddr ? 'more' : 'done';
+    let fz = null;
+    for (const a of alts) { const f = C.fuzzyCommand(a); if (f && (!fz || f.score > fz.score)) { fz = f; fz.raw = a; } }
+    const ask = (cmd, r) => {
+      pendingCmd = { cmd, raw: r, t: Date.now() };
+      say(`你是要${CMD_NAME[cmd] || cmd}嗎？`, { noLast: true });
+      toast(`你是要「${CMD_NAME[cmd] || cmd}」嗎？請說「是」或「不是，請…」`, 6000);
+      logHeard(r, '確認中：' + (CMD_NAME[cmd] || cmd) + '？');
+      return 'more';
+    };
+    if (c) {
+      // 關鍵字比對到了，但整句其實更像另一個指令（例如「準被拍照」）→ 先問
+      if (c.cmd !== 'locate' && fz && fz.cmd !== c.cmd && fz.score >= 0.6 && fz.score > C.scoreFor(raw, c.cmd) + 0.05) return ask(fz.cmd, fz.raw);
+      logHeard(raw, CMD_NAME[c.cmd] || c.cmd);
+      doCmd(c, raw);
+      return cam.on || awaitAddr ? 'more' : 'done';
+    }
+    if (fz && fz.score >= 0.85) { logHeard(fz.raw, '（模糊）' + (CMD_NAME[fz.cmd] || fz.cmd)); doCmd({ cmd: fz.cmd }, fz.raw); return cam.on || awaitAddr ? 'more' : 'done'; }
+    if (fz && fz.score >= 0.55 && C.norm(fz.raw).length <= 10) return ask(fz.cmd, fz.raw);
+    logHeard(t0, '聽不懂');
+    return 'unknown';
   }
-  const CMD_NAME = { pause: '暫停', resume: '繼續', repeat: '重複', skip: '跳過', reroute: '重新規劃', progress: '進度', mark: '標記', locate: '重新定位', relocate: '重新定位（等地址）', stop: '結束', toilet: '找廁所', nextpark: '下一個停車點', streetdone: '這條派完了', campre: '準備拍照', photo: '拍照', camclose: '關相機' };
+  const CMD_NAME = { wcon: '顯示廁所', wcoff: '關閉廁所', addron: '顯示門牌', addroff: '關閉門牌', pause: '暫停', resume: '繼續', repeat: '重複', skip: '跳過', reroute: '重新規劃', progress: '進度', mark: '標記', locate: '重新定位', relocate: '重新定位', stop: '結束', toilet: '找廁所', nextpark: '下一個停車點', streetdone: '這條派完了', campre: '準備拍照', photo: '拍照', camclose: '關相機' };
 
   // 導航中語音待命：不用按按鈕，直接說
   const hf = { on: false, rec: null, want: false, fails: 0 };
@@ -1553,6 +1599,10 @@
         say(m, { noLast: true }); toast(m); break;
       }
       case 'toilet': findToilet(); break;
+      case 'wcon': S.showWC = true; saveSettings(); if (!wcList() && st.block) fetchWC(st.block, true).then(renderWC); renderWC(); say('廁所顯示在地圖上了，要關掉請說關閉廁所', { noLast: true }); break;
+      case 'wcoff': S.showWC = false; saveSettings(); renderWC(); say('廁所圖示關了', { noLast: true }); toast('廁所圖示已關閉'); break;
+      case 'addron': S.showAddr = true; saveSettings(); if (map.getZoom() < 18) map.setZoom(18); renderAddrs(); say(nav ? '顯示現在這條路的門牌' : '門牌顯示出來了，地圖放大才看得到', { noLast: true }); break;
+      case 'addroff': S.showAddr = false; saveSettings(); renderAddrs(); say('門牌關了', { noLast: true }); toast('門牌已關閉'); break;
       case 'relocate': awaitAddr = Date.now(); say('好，請說你現在的位置，例如萬大路410號，或萬大路449巷口', { noLast: true }); toast('請說你現在的位置'); break;
       case 'campre': openCam(true); break;
       case 'photo': if (cam.on) shoot(); else openCam(true, true); break;
@@ -1858,6 +1908,7 @@
   // 公廁
   $('#fabWC').onclick = findToilet;
   $('#wcFind').onclick = () => { closeSheets(); findToilet(); };
+  $('#wcHide').onclick = () => { closeSheets(); doCmd({ cmd: 'wcoff' }); };
   // 備份
   $('#bkExport').onclick = () => {
     const data = {}; for (const k of Object.keys(localStorage)) if (k.startsWith('pb_')) data[k] = localStorage.getItem(k);

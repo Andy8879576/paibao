@@ -227,7 +227,7 @@ body.mode-draw #cross{display:block}
 <div id="map"></div>
 
 <header id="top">
-  <button class="blockchip" id="btnBlock" aria-label="選擇區塊"><small>目前區塊<span class="ver" id="verChip">v1.7.1</span></small><b id="blockName">還沒有區塊</b></button>
+  <button class="blockchip" id="btnBlock" aria-label="選擇區塊"><small>目前區塊<span class="ver" id="verChip">v1.7.2</span></small><b id="blockName">還沒有區塊</b></button>
   <button class="pill" id="hfPill" type="button" style="display:none">🎙 語音待命中</button>
   <div class="pill" id="gpsPill"><i></i><span>GPS 定位中</span></div>
 </header>
@@ -423,7 +423,7 @@ body.mode-draw #cross{display:block}
   <input type="file" id="bkFile" accept=".json,application/json" hidden>
   <div class="btnrow"><button class="btn danger" id="wipeAll">刪除區塊與進度</button></div>
   <p class="note">派報紀錄與照片不會被刪除。區塊被刪掉時，它的紀錄仍會保留。</p>
-  <p class="verline">派報系統　版本 <b id="verText">v1.7.1</b>（2026-11-26）<br><span id="verStatus">尚未檢查更新</span></p>
+  <p class="verline">派報系統　版本 <b id="verText">v1.7.2</b>（2026-11-26）<br><span id="verStatus">尚未檢查更新</span></p>
   <div class="btnrow"><button class="btn" id="verCheck">檢查更新</button></div>
 </section>
 
@@ -463,6 +463,7 @@ body.mode-draw #cross{display:block}
   <h2>附近的廁所</h2>
   <p class="note">資料來自開放街圖，不一定完整；出發前可以先看一下。</p>
   <div id="wcList"></div>
+  <div class="btnrow"><button class="btn full" id="wcHide">關閉地圖上的廁所圖示</button></div>
 </section>
 
 <section class="sheet" id="shPhoto">

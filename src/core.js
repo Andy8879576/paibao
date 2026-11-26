@@ -63,8 +63,8 @@ const Core = (() => {
     return total + cur;
   }
   // 語音辨識有時給簡體字：常用字轉成繁體再比對
-  const S2T_A = '号暂继续复过规划进厕标记这结准备机关闭开启处门边条张么们帮请说听讲错对报点车场华东为个后头转现时间区块图楼层发远广园兴宁庆乡汉济贵阳内门宝万义罗龙凤寿丰侨线环艺爱乐云湾们吗没还让给应该这着将从与无实灯场业树农园学银医厅馆双单顺动继', S2T_B = '號暫繼續複過規劃進廁標記這結準備機關閉開啟處門邊條張麼們幫請說聽講錯對報點車場華東為個後頭轉現時間區塊圖樓層發遠廣園興寧慶鄉漢濟貴陽內門寶萬義羅龍鳳壽豐僑線環藝愛樂雲灣們嗎沒還讓給應該這著將從與無實燈場業樹農園學銀醫廳館雙單順動繼';
-  const s2t = s => s.replace(/[号暂继续复过规划进厕标记这结准备机关闭开启处门边条张么们帮请说听讲错对报点车场华东为个后头转现时间区块图楼层发远广园兴宁庆乡汉济贵阳内门宝万义罗龙凤寿丰侨线环艺爱乐云湾们吗没还让给应该这着将从与无实灯场业树农园学银医厅馆双单顺动继]/g, ch => S2T_B[S2T_A.indexOf(ch)]);
+  const S2T_A = '号暂继续复过规划进厕标记这结准备机关闭开启处门边条张么们帮请说听讲错对报点车场华东为个后头转现时间区块图楼层发远广园兴宁庆乡汉济贵阳内门宝万义罗龙凤寿丰侨线环艺爱乐云湾们吗没还让给应该这着将从与无实灯场业树农园学银医厅馆双单顺动继预显隐录声钟导计确认觉样', S2T_B = '號暫繼續複過規劃進廁標記這結準備機關閉開啟處門邊條張麼們幫請說聽講錯對報點車場華東為個後頭轉現時間區塊圖樓層發遠廣園興寧慶鄉漢濟貴陽內門寶萬義羅龍鳳壽豐僑線環藝愛樂雲灣們嗎沒還讓給應該這著將從與無實燈場業樹農園學銀醫廳館雙單順動繼預顯隱錄聲鐘導計確認覺樣';
+  const s2t = s => s.replace(new RegExp('[' + S2T_A + ']', 'g'), ch => S2T_B[S2T_A.indexOf(ch)]);
   function norm(s) {
     if (!s) return '';
     s = s2t(String(s)).replace(/[\uFF10-\uFF19]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFF10 + 48));
@@ -824,8 +824,12 @@ const Core = (() => {
     }
     // 只說地址（例如「萬大路410號」）也當成修正位置
     if (/^(我)?(現在)?(在)?[^\d]{1,12}(路|街|大道)([一二三四五六七八九十\d]+段)?(\d+巷)?(\d+弄)?\d+(之\d+)?號/.test(t)) return { cmd: 'locate', arg: t.replace(/^(我)?(現在)?(在)?/, '').replace(/(這邊|這裡|附近|旁邊|前面|門口)+$/, '') };
+    if (/(關|隱藏|收起|不要|拿掉|取消).{0,4}(廁所|洗手間)|(廁所|洗手間).{0,4}(關|隱藏|收起|不要|拿掉|取消)/.test(t)) return { cmd: 'wcoff' };
+    if (/(顯示|打開|開啟|秀出|叫出).{0,3}(廁所|洗手間)|(廁所|洗手間).{0,3}(顯示|打開|開啟)/.test(t)) return { cmd: 'wcon' };
+    if (/(關|隱藏|收起|不要|拿掉).{0,4}門牌|門牌.{0,4}(關|隱藏|收起|不要|拿掉)/.test(t)) return { cmd: 'addroff' };
+    if (/(顯示|打開|開啟|秀出).{0,3}門牌|門牌.{0,3}(顯示|打開|開啟)/.test(t)) return { cmd: 'addron' };
     if (/廁所|洗手間|化妝室|尿尿|上大號/.test(t)) return { cmd: 'toilet' };
-    if (/準備拍照|打開相機|開相機|開啟相機|準備照相/.test(t)) return { cmd: 'campre' };
+    if (/(準備|預備|要|開始).{0,2}(拍照|照相|拍|相機)|(拍照|照相|相機).{0,2}(準備|預備)|(打開|開啟|開).{0,2}相機|相機.{0,2}(打開|開啟)/.test(t) && !/關|不/.test(t)) return { cmd: 'campre' };
     if (/拍照|照相|拍一張|拍下來|快門|茄子/.test(t)) return { cmd: 'photo' };
     if (/關閉相機|關掉相機|不拍了|取消拍照/.test(t)) return { cmd: 'camclose' };
     if (/下一(個|站|圈)|停車點|停哪|騎到哪/.test(t) && !/號/.test(t)) return { cmd: 'nextpark' };
@@ -853,6 +857,46 @@ const Core = (() => {
     if (/繼續|開始|恢復/.test(t)) return { cmd: 'resume' };
     if (/結束|收工/.test(t)) return { cmd: 'stop' };
     return { cmd: 'unknown', text: t };
+  }
+
+  // 模糊比對：說法不標準、順序顛倒、辨識錯一兩個字時，找最像的指令
+  const LEX = {
+    campre: ['準備拍照', '拍照準備', '打開相機', '相機打開', '開相機', '要拍照'],
+    photo: ['拍照', '照相', '拍下來', '快門', '拍一張'],
+    camclose: ['關閉相機', '關相機', '不拍了'],
+    relocate: ['重新定位', '定位錯了', '修正位置', '位置不對', '更正位置', '重新定一下位'],
+    pause: ['暫停', '停一下', '先停'],
+    resume: ['繼續', '繼續導航', '恢復'],
+    repeat: ['重複', '再說一次', '再講一次', '剛剛說什麼'],
+    skip: ['跳過這條', '跳過', '這條不派'],
+    reroute: ['重新規劃', '重新計算路線', '重新規劃路線'],
+    progress: ['進度', '還剩多少', '剩多少張'],
+    toilet: ['廁所在哪裡', '找廁所', '最近的廁所', '洗手間在哪'],
+    wcon: ['顯示廁所', '打開廁所', '廁所顯示'],
+    wcoff: ['關閉廁所', '廁所圖示關閉', '隱藏廁所', '廁所關掉'],
+    addron: ['顯示門牌', '打開門牌', '門牌顯示'],
+    addroff: ['關閉門牌', '隱藏門牌', '門牌關掉'],
+    nextpark: ['下一個停車點', '下一站', '下一圈停哪'],
+    streetdone: ['這條派完了', '派完了', '這條好了'],
+    stop: ['結束導航', '收工', '結束派報'],
+  };
+  function charBag(s) { const m = new Map(); for (const ch of s) m.set(ch, (m.get(ch) || 0) + 1); return m; }
+  function dice(a, b) {
+    if (!a || !b) return 0;
+    const A = charBag(a), B = charBag(b); let inter = 0;
+    for (const [ch, n] of A) inter += Math.min(n, B.get(ch) || 0);
+    return 2 * inter / (a.length + b.length);
+  }
+  function scoreFor(text, cmd) { const t = norm(text); return Math.max(0, ...(LEX[cmd] || []).map(ph => dice(t, ph))); }
+  function fuzzyCommand(text) {
+    const t = norm(text).replace(/^(小何|小河|小和|喂|欸|那個|嗯|請|麻煩|幫我|我要|我想|你|好)+/, '').replace(/(一下|好嗎|好不好|謝謝|吧|啦|喔|哦|了)+$/, '');
+    if (!t || t.length > 14) return null; // 太長的多半是在跟別人講話
+    let best = null;
+    for (const [cmd, list] of Object.entries(LEX)) for (const ph of list) {
+      const sc = dice(t, ph);
+      if (!best || sc > best.score) best = { cmd, score: sc, phrase: ph };
+    }
+    return best;
   }
 
   // 依說出的地點找座標：門牌 → 巷弄/路名
@@ -930,7 +974,7 @@ const Core = (() => {
     dist, bearing, angDiff, projSeg, pointInPoly, polyLength, pointAlong, bbox, norm, normRoad, cnToNum,
     buildNetwork, nearestChain, chainsNear, markVisits, dijkstra, planRoute, expandRoute, buildManeuvers,
     nearestJunction, itemFlyers, selectLoop, suggestPark, planLoops, junctionLabel, nearestAddr, routeBetween,
-    stepGuide, guideText, cardinal, straightText,
+    stepGuide, guideText, cardinal, straightText, fuzzyCommand, scoreFor,
     pointAtRoute, createTracker, trackUpdate, trackRelocate, parseCommand, resolvePlace,
   };
 })();

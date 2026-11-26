@@ -227,7 +227,7 @@ body.mode-draw #cross{display:block}
 <div id="map"></div>
 
 <header id="top">
-  <button class="blockchip" id="btnBlock" aria-label="選擇區塊"><small>目前區塊<span class="ver" id="verChip">v1.7.1</span></small><b id="blockName">還沒有區塊</b></button>
+  <button class="blockchip" id="btnBlock" aria-label="選擇區塊"><small>目前區塊<span class="ver" id="verChip">v1.7.2</span></small><b id="blockName">還沒有區塊</b></button>
   <button class="pill" id="hfPill" type="button" style="display:none">🎙 語音待命中</button>
   <div class="pill" id="gpsPill"><i></i><span>GPS 定位中</span></div>
 </header>
@@ -423,7 +423,7 @@ body.mode-draw #cross{display:block}
   <input type="file" id="bkFile" accept=".json,application/json" hidden>
   <div class="btnrow"><button class="btn danger" id="wipeAll">刪除區塊與進度</button></div>
   <p class="note">派報紀錄與照片不會被刪除。區塊被刪掉時，它的紀錄仍會保留。</p>
-  <p class="verline">派報系統　版本 <b id="verText">v1.7.1</b>（2026-11-26）<br><span id="verStatus">尚未檢查更新</span></p>
+  <p class="verline">派報系統　版本 <b id="verText">v1.7.2</b>（2026-11-26）<br><span id="verStatus">尚未檢查更新</span></p>
   <div class="btnrow"><button class="btn" id="verCheck">檢查更新</button></div>
 </section>
 
@@ -463,6 +463,7 @@ body.mode-draw #cross{display:block}
   <h2>附近的廁所</h2>
   <p class="note">資料來自開放街圖，不一定完整；出發前可以先看一下。</p>
   <div id="wcList"></div>
+  <div class="btnrow"><button class="btn full" id="wcHide">關閉地圖上的廁所圖示</button></div>
 </section>
 
 <section class="sheet" id="shPhoto">
@@ -564,8 +565,8 @@ const Core = (() => {
     return total + cur;
   }
   // 語音辨識有時給簡體字：常用字轉成繁體再比對
-  const S2T_A = '号暂继续复过规划进厕标记这结准备机关闭开启处门边条张么们帮请说听讲错对报点车场华东为个后头转现时间区块图楼层发远广园兴宁庆乡汉济贵阳内门宝万义罗龙凤寿丰侨线环艺爱乐云湾们吗没还让给应该这着将从与无实灯场业树农园学银医厅馆双单顺动继', S2T_B = '號暫繼續複過規劃進廁標記這結準備機關閉開啟處門邊條張麼們幫請說聽講錯對報點車場華東為個後頭轉現時間區塊圖樓層發遠廣園興寧慶鄉漢濟貴陽內門寶萬義羅龍鳳壽豐僑線環藝愛樂雲灣們嗎沒還讓給應該這著將從與無實燈場業樹農園學銀醫廳館雙單順動繼';
-  const s2t = s => s.replace(/[号暂继续复过规划进厕标记这结准备机关闭开启处门边条张么们帮请说听讲错对报点车场华东为个后头转现时间区块图楼层发远广园兴宁庆乡汉济贵阳内门宝万义罗龙凤寿丰侨线环艺爱乐云湾们吗没还让给应该这着将从与无实灯场业树农园学银医厅馆双单顺动继]/g, ch => S2T_B[S2T_A.indexOf(ch)]);
+  const S2T_A = '号暂继续复过规划进厕标记这结准备机关闭开启处门边条张么们帮请说听讲错对报点车场华东为个后头转现时间区块图楼层发远广园兴宁庆乡汉济贵阳内门宝万义罗龙凤寿丰侨线环艺爱乐云湾们吗没还让给应该这着将从与无实灯场业树农园学银医厅馆双单顺动继预显隐录声钟导计确认觉样', S2T_B = '號暫繼續複過規劃進廁標記這結準備機關閉開啟處門邊條張麼們幫請說聽講錯對報點車場華東為個後頭轉現時間區塊圖樓層發遠廣園興寧慶鄉漢濟貴陽內門寶萬義羅龍鳳壽豐僑線環藝愛樂雲灣們嗎沒還讓給應該這著將從與無實燈場業樹農園學銀醫廳館雙單順動繼預顯隱錄聲鐘導計確認覺樣';
+  const s2t = s => s.replace(new RegExp('[' + S2T_A + ']', 'g'), ch => S2T_B[S2T_A.indexOf(ch)]);
   function norm(s) {
     if (!s) return '';
     s = s2t(String(s)).replace(/[\uFF10-\uFF19]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFF10 + 48));
@@ -1325,8 +1326,12 @@ const Core = (() => {
     }
     // 只說地址（例如「萬大路410號」）也當成修正位置
     if (/^(我)?(現在)?(在)?[^\d]{1,12}(路|街|大道)([一二三四五六七八九十\d]+段)?(\d+巷)?(\d+弄)?\d+(之\d+)?號/.test(t)) return { cmd: 'locate', arg: t.replace(/^(我)?(現在)?(在)?/, '').replace(/(這邊|這裡|附近|旁邊|前面|門口)+$/, '') };
+    if (/(關|隱藏|收起|不要|拿掉|取消).{0,4}(廁所|洗手間)|(廁所|洗手間).{0,4}(關|隱藏|收起|不要|拿掉|取消)/.test(t)) return { cmd: 'wcoff' };
+    if (/(顯示|打開|開啟|秀出|叫出).{0,3}(廁所|洗手間)|(廁所|洗手間).{0,3}(顯示|打開|開啟)/.test(t)) return { cmd: 'wcon' };
+    if (/(關|隱藏|收起|不要|拿掉).{0,4}門牌|門牌.{0,4}(關|隱藏|收起|不要|拿掉)/.test(t)) return { cmd: 'addroff' };
+    if (/(顯示|打開|開啟|秀出).{0,3}門牌|門牌.{0,3}(顯示|打開|開啟)/.test(t)) return { cmd: 'addron' };
     if (/廁所|洗手間|化妝室|尿尿|上大號/.test(t)) return { cmd: 'toilet' };
-    if (/準備拍照|打開相機|開相機|開啟相機|準備照相/.test(t)) return { cmd: 'campre' };
+    if (/(準備|預備|要|開始).{0,2}(拍照|照相|拍|相機)|(拍照|照相|相機).{0,2}(準備|預備)|(打開|開啟|開).{0,2}相機|相機.{0,2}(打開|開啟)/.test(t) && !/關|不/.test(t)) return { cmd: 'campre' };
     if (/拍照|照相|拍一張|拍下來|快門|茄子/.test(t)) return { cmd: 'photo' };
     if (/關閉相機|關掉相機|不拍了|取消拍照/.test(t)) return { cmd: 'camclose' };
     if (/下一(個|站|圈)|停車點|停哪|騎到哪/.test(t) && !/號/.test(t)) return { cmd: 'nextpark' };
@@ -1354,6 +1359,46 @@ const Core = (() => {
     if (/繼續|開始|恢復/.test(t)) return { cmd: 'resume' };
     if (/結束|收工/.test(t)) return { cmd: 'stop' };
     return { cmd: 'unknown', text: t };
+  }
+
+  // 模糊比對：說法不標準、順序顛倒、辨識錯一兩個字時，找最像的指令
+  const LEX = {
+    campre: ['準備拍照', '拍照準備', '打開相機', '相機打開', '開相機', '要拍照'],
+    photo: ['拍照', '照相', '拍下來', '快門', '拍一張'],
+    camclose: ['關閉相機', '關相機', '不拍了'],
+    relocate: ['重新定位', '定位錯了', '修正位置', '位置不對', '更正位置', '重新定一下位'],
+    pause: ['暫停', '停一下', '先停'],
+    resume: ['繼續', '繼續導航', '恢復'],
+    repeat: ['重複', '再說一次', '再講一次', '剛剛說什麼'],
+    skip: ['跳過這條', '跳過', '這條不派'],
+    reroute: ['重新規劃', '重新計算路線', '重新規劃路線'],
+    progress: ['進度', '還剩多少', '剩多少張'],
+    toilet: ['廁所在哪裡', '找廁所', '最近的廁所', '洗手間在哪'],
+    wcon: ['顯示廁所', '打開廁所', '廁所顯示'],
+    wcoff: ['關閉廁所', '廁所圖示關閉', '隱藏廁所', '廁所關掉'],
+    addron: ['顯示門牌', '打開門牌', '門牌顯示'],
+    addroff: ['關閉門牌', '隱藏門牌', '門牌關掉'],
+    nextpark: ['下一個停車點', '下一站', '下一圈停哪'],
+    streetdone: ['這條派完了', '派完了', '這條好了'],
+    stop: ['結束導航', '收工', '結束派報'],
+  };
+  function charBag(s) { const m = new Map(); for (const ch of s) m.set(ch, (m.get(ch) || 0) + 1); return m; }
+  function dice(a, b) {
+    if (!a || !b) return 0;
+    const A = charBag(a), B = charBag(b); let inter = 0;
+    for (const [ch, n] of A) inter += Math.min(n, B.get(ch) || 0);
+    return 2 * inter / (a.length + b.length);
+  }
+  function scoreFor(text, cmd) { const t = norm(text); return Math.max(0, ...(LEX[cmd] || []).map(ph => dice(t, ph))); }
+  function fuzzyCommand(text) {
+    const t = norm(text).replace(/^(小何|小河|小和|喂|欸|那個|嗯|請|麻煩|幫我|我要|我想|你|好)+/, '').replace(/(一下|好嗎|好不好|謝謝|吧|啦|喔|哦|了)+$/, '');
+    if (!t || t.length > 14) return null; // 太長的多半是在跟別人講話
+    let best = null;
+    for (const [cmd, list] of Object.entries(LEX)) for (const ph of list) {
+      const sc = dice(t, ph);
+      if (!best || sc > best.score) best = { cmd, score: sc, phrase: ph };
+    }
+    return best;
   }
 
   // 依說出的地點找座標：門牌 → 巷弄/路名
@@ -1431,7 +1476,7 @@ const Core = (() => {
     dist, bearing, angDiff, projSeg, pointInPoly, polyLength, pointAlong, bbox, norm, normRoad, cnToNum,
     buildNetwork, nearestChain, chainsNear, markVisits, dijkstra, planRoute, expandRoute, buildManeuvers,
     nearestJunction, itemFlyers, selectLoop, suggestPark, planLoops, junctionLabel, nearestAddr, routeBetween,
-    stepGuide, guideText, cardinal, straightText,
+    stepGuide, guideText, cardinal, straightText, fuzzyCommand, scoreFor,
     pointAtRoute, createTracker, trackUpdate, trackRelocate, parseCommand, resolvePlace,
   };
 })();
@@ -1440,7 +1485,7 @@ const Core = (() => {
 (() => {
   'use strict';
   const C = Core;
-  const APP_VERSION = '1.7.1', APP_DATE = '2026-11-26';
+  const APP_VERSION = '1.7.2', APP_DATE = '2026-11-26';
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
 
@@ -1471,6 +1516,7 @@ const Core = (() => {
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* 無 */ }
     // 直走時定時提醒：舊設定是 0 的改成每 30 秒說「繼續前進」
     if (!S._v || S._v < 160) { if (!S.periodic) S.periodic = 30; S._v = 160; saveSettings(); }
+    if (S._v < 172) { S.showAddr = false; S.showWC = false; S._v = 172; saveSettings(); } // 門牌、廁所改成要用時再顯示
   })();
 
   const MARK = {
@@ -1691,14 +1737,23 @@ const Core = (() => {
   }
 
   /* ---------- 路網顯示 ---------- */
-  function chainStyle(c) {
+  // 導航中只凸顯這一圈的街道，其他的淡化成虛線
+  let focusKeys = null;
+  function setFocus() { focusKeys = nav && nav.loop ? new Set(nav.loop.items.map(it => st.net.chains[it.c].key)) : null; }
+  function fade(o, c) {
+    if (!focusKeys || focusKeys.has(c.key)) return o;
+    return Object.assign({}, o, { weight: Math.min(o.weight, 2), opacity: o.opacity * 0.35, dashArray: '1 6' });
+  }
+  function chainStyle(c) { return fade(chainStyle0(c), c); }
+  function chainStyle0(c) {
     if (!c.req) return { color: '#7D8796', weight: 2, opacity: 0.45, dashArray: null };
     if (st.covered.has(c.key)) return { color: '#2E9E5B', weight: 5, opacity: 0.9, dashArray: null };
     if (st.skipped.has(c.key)) return { color: '#AEB6C1', weight: 4, opacity: 0.9, dashArray: '4 7' };
     return { color: '#F28C28', weight: 5, opacity: 0.92, dashArray: null };
   }
   const RED = '#D7263D', BLACK = '#1E242C', TODO = '#F28C28';
-  function sideStyle(c, sd) {
+  function sideStyle(c, sd) { return fade(sideStyle0(c, sd), c); }
+  function sideStyle0(c, sd) {
     if (!c.req) return { color: '#7D8796', weight: 2, opacity: 0.45, dashArray: null };
     if (st.skipped.has(c.key)) return { color: '#AEB6C1', weight: 3, opacity: 0.9, dashArray: '4 7' };
     if (sideDone(c, sd)) return { color: (sd === 'f') === c.fShun ? RED : BLACK, weight: 4, opacity: 0.95, dashArray: null };
@@ -1732,8 +1787,10 @@ const Core = (() => {
     L_addr.clearLayers();
     if (!S.showAddr || !st.net || map.getZoom() < 18) return;
     const bd = map.getBounds().pad(0.1); let n = 0;
+    const g = nav ? gpsStreet() : null, only = g && g.name ? C.normRoad(g.name) : null;
     for (const a of st.net.addrs) {
       if (!bd.contains([a.lat, a.lon])) continue;
+      if (only && C.normRoad(a.s || '') !== only) continue;
       if (++n > 300) break;
       const h = String(a.h).replace(/號$/, '');
       L.marker([a.lat, a.lon], { interactive: false, keyboard: false, icon: L.divIcon({ className: '', html: `<span class="hn">${esc(h)}</span>`, iconSize: [0, 0] }) }).addTo(L_addr);
@@ -2084,6 +2141,7 @@ const Core = (() => {
     st.follow = true; $('#fabFollow').classList.add('on');
     if (f) map.setView(start, Math.max(map.getZoom(), 18));
     drawPark();
+    setFocus(); renderNet();
     drawRoute();
     sessStart();
     const m0 = route.maneuvers[0];
@@ -2100,7 +2158,7 @@ const Core = (() => {
     if (!nav) return;
     saveProgress(true); sessSave(true);
     hfStop();
-    nav = null; L_route.clearLayers(); L_arrows.clearLayers(); map.removeLayer(L_arrows); sideL = sideR = routeAhead = null;
+    nav = null; focusKeys = null; renderNet(); L_route.clearLayers(); L_arrows.clearLayers(); map.removeLayer(L_arrows); sideL = sideR = routeAhead = null;
     L_park.clearLayers();
     if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
     if (silent) silent.pause();
@@ -2872,7 +2930,7 @@ const Core = (() => {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null;
   // 聽到一句話：回傳 'done'（處理完）、'more'（還要繼續聽，例如相機開著或等地址）、'unknown'（聽不懂）、'echo'（是自己念的）
-  let awaitAddr = 0;
+  let awaitAddr = 0, pendingCmd = null;
   const heard = LS.get('heard', []);
   function logHeard(t, what) { heard.unshift({ t: Date.now(), s: t, r: what }); heard.length = Math.min(heard.length, 15); LS.set('heard', heard); }
   function isEcho(t) {
@@ -2892,14 +2950,47 @@ const Core = (() => {
       correctByText(addr);
       return 'done';
     }
+    // 正在等「是／不是」
+    if (pendingCmd && Date.now() - pendingCmd.t < 20000) {
+      const n0 = C.norm(t0);
+      if (/^(是|對|好|沒錯|嗯|要|確定|正確|可以|OK|ok|Yes|yes|對的|是的|沒問題)/.test(n0) && !/^(不是|不對|不要)/.test(n0)) {
+        const pc = pendingCmd; pendingCmd = null;
+        logHeard(t0, '確認：' + (CMD_NAME[pc.cmd] || pc.cmd));
+        doCmd({ cmd: pc.cmd }, pc.raw);
+        return cam.on || awaitAddr ? 'more' : 'done';
+      }
+      if (/^(不是|不對|不要|錯了|錯|否|取消|算了)/.test(n0)) {
+        pendingCmd = null;
+        const rest = n0.replace(/^(不是|不對|不要|錯了|錯|否|取消|算了)+[，,]?(請|我要|是要|要|幫我)?/, '');
+        if (!rest) { say('好，請再說一次要做什麼', { noLast: true }); logHeard(t0, '不是，等重說'); return 'more'; }
+        return handleHeard([rest]);
+      }
+      pendingCmd = null; // 說了別的：當成新的指令
+    }
     let c = null, raw = t0;
     for (const a of alts) { const x = C.parseCommand(a); if (x.cmd !== 'unknown' && x.cmd !== 'none') { c = x; raw = a; break; } }
-    if (!c) { logHeard(t0, '聽不懂'); return 'unknown'; }
-    logHeard(raw, CMD_NAME[c.cmd] || c.cmd);
-    doCmd(c, raw);
-    return cam.on || awaitAddr ? 'more' : 'done';
+    let fz = null;
+    for (const a of alts) { const f = C.fuzzyCommand(a); if (f && (!fz || f.score > fz.score)) { fz = f; fz.raw = a; } }
+    const ask = (cmd, r) => {
+      pendingCmd = { cmd, raw: r, t: Date.now() };
+      say(`你是要${CMD_NAME[cmd] || cmd}嗎？`, { noLast: true });
+      toast(`你是要「${CMD_NAME[cmd] || cmd}」嗎？請說「是」或「不是，請…」`, 6000);
+      logHeard(r, '確認中：' + (CMD_NAME[cmd] || cmd) + '？');
+      return 'more';
+    };
+    if (c) {
+      // 關鍵字比對到了，但整句其實更像另一個指令（例如「準被拍照」）→ 先問
+      if (c.cmd !== 'locate' && fz && fz.cmd !== c.cmd && fz.score >= 0.6 && fz.score > C.scoreFor(raw, c.cmd) + 0.05) return ask(fz.cmd, fz.raw);
+      logHeard(raw, CMD_NAME[c.cmd] || c.cmd);
+      doCmd(c, raw);
+      return cam.on || awaitAddr ? 'more' : 'done';
+    }
+    if (fz && fz.score >= 0.85) { logHeard(fz.raw, '（模糊）' + (CMD_NAME[fz.cmd] || fz.cmd)); doCmd({ cmd: fz.cmd }, fz.raw); return cam.on || awaitAddr ? 'more' : 'done'; }
+    if (fz && fz.score >= 0.55 && C.norm(fz.raw).length <= 10) return ask(fz.cmd, fz.raw);
+    logHeard(t0, '聽不懂');
+    return 'unknown';
   }
-  const CMD_NAME = { pause: '暫停', resume: '繼續', repeat: '重複', skip: '跳過', reroute: '重新規劃', progress: '進度', mark: '標記', locate: '重新定位', relocate: '重新定位（等地址）', stop: '結束', toilet: '找廁所', nextpark: '下一個停車點', streetdone: '這條派完了', campre: '準備拍照', photo: '拍照', camclose: '關相機' };
+  const CMD_NAME = { wcon: '顯示廁所', wcoff: '關閉廁所', addron: '顯示門牌', addroff: '關閉門牌', pause: '暫停', resume: '繼續', repeat: '重複', skip: '跳過', reroute: '重新規劃', progress: '進度', mark: '標記', locate: '重新定位', relocate: '重新定位', stop: '結束', toilet: '找廁所', nextpark: '下一個停車點', streetdone: '這條派完了', campre: '準備拍照', photo: '拍照', camclose: '關相機' };
 
   // 導航中語音待命：不用按按鈕，直接說
   const hf = { on: false, rec: null, want: false, fails: 0 };
@@ -2992,6 +3083,10 @@ const Core = (() => {
         say(m, { noLast: true }); toast(m); break;
       }
       case 'toilet': findToilet(); break;
+      case 'wcon': S.showWC = true; saveSettings(); if (!wcList() && st.block) fetchWC(st.block, true).then(renderWC); renderWC(); say('廁所顯示在地圖上了，要關掉請說關閉廁所', { noLast: true }); break;
+      case 'wcoff': S.showWC = false; saveSettings(); renderWC(); say('廁所圖示關了', { noLast: true }); toast('廁所圖示已關閉'); break;
+      case 'addron': S.showAddr = true; saveSettings(); if (map.getZoom() < 18) map.setZoom(18); renderAddrs(); say(nav ? '顯示現在這條路的門牌' : '門牌顯示出來了，地圖放大才看得到', { noLast: true }); break;
+      case 'addroff': S.showAddr = false; saveSettings(); renderAddrs(); say('門牌關了', { noLast: true }); toast('門牌已關閉'); break;
       case 'relocate': awaitAddr = Date.now(); say('好，請說你現在的位置，例如萬大路410號，或萬大路449巷口', { noLast: true }); toast('請說你現在的位置'); break;
       case 'campre': openCam(true); break;
       case 'photo': if (cam.on) shoot(); else openCam(true, true); break;
@@ -3297,6 +3392,7 @@ const Core = (() => {
   // 公廁
   $('#fabWC').onclick = findToilet;
   $('#wcFind').onclick = () => { closeSheets(); findToilet(); };
+  $('#wcHide').onclick = () => { closeSheets(); doCmd({ cmd: 'wcoff' }); };
   // 備份
   $('#bkExport').onclick = () => {
     const data = {}; for (const k of Object.keys(localStorage)) if (k.startsWith('pb_')) data[k] = localStorage.getItem(k);
