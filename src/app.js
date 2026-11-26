@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const C = Core;
-  const APP_VERSION = '1.6.1', APP_DATE = '2026-11-26';
+  const APP_VERSION = '1.7.0', APP_DATE = '2026-11-26';
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
 
@@ -11,17 +11,25 @@
     set(k, v) { try { localStorage.setItem('pb_' + k, JSON.stringify(v)); return true; } catch (e) { toast('手機儲存空間不夠，這筆資料沒有存起來'); return false; } },
     del(k) { try { localStorage.removeItem('pb_' + k); } catch (e) { /* 無 */ } },
   };
-  const DEF = { preDist: 30, nearDist: 10, periodic: 0, rate: 1.0, maxAcc: 40, offRoute: 25, returnToStart: false, includePaths: true, showAddr: true, earBtn: false, layer: 'osm', orient: 'heading', cap: 400, density: 10, loopMode: true, twoMode: 'grade', showWC: true };
+  const DEF = { preDist: 30, nearDist: 10, periodic: 0, rate: 1.0, maxAcc: 40, offRoute: 25, returnToStart: false, includePaths: true, showAddr: true, earBtn: false, layer: 'osm', orient: 'heading', cap: 400, density: 10, loopMode: true, twoMode: 'grade', showWC: true, pdr: true, stepLen: 0.65 };
   const S = Object.assign({}, DEF, LS.get('settings', {}));
   const saveSettings = () => LS.set('settings', S);
   // 升級到 1.6：先在手機裡備份一份目前的區塊與進度（不含圖資），再做任何事
   (function backupBeforeUpgrade() {
+    // 每次升級前先備份區塊、進度、派報紀錄（不含圖資）；只保留最新的升級前備份，避免占滿空間
     try {
-      if (localStorage.getItem('pb_bak_160')) return;
-      const data = {};
-      for (const k of Object.keys(localStorage)) if (k.startsWith('pb_') && !k.startsWith('pb_net_') && !k.startsWith('pb_bak_')) data[k] = localStorage.getItem(k);
-      localStorage.setItem('pb_bak_160', JSON.stringify({ t: Date.now(), from: 'v1.5', data }));
+      const tag = 'pb_bak_' + APP_VERSION.replace(/\./g, '');
+      if (!localStorage.getItem(tag)) {
+        const data = {};
+        for (const k of Object.keys(localStorage)) if (k.startsWith('pb_') && !k.startsWith('pb_net_') && !k.startsWith('pb_bak_')) data[k] = localStorage.getItem(k);
+        if (Object.keys(data).length) {
+          for (const k of Object.keys(localStorage)) if (k.startsWith('pb_bak_') && k !== 'pb_bak_160') localStorage.removeItem(k);
+          localStorage.setItem(tag, JSON.stringify({ t: Date.now(), from: 'before v' + APP_VERSION, data }));
+        }
+      }
     } catch (e) { /* 空間不足就略過 */ }
+    // 請瀏覽器不要自動清掉資料
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* 無 */ }
     // 直走時定時提醒：舊設定是 0 的改成每 30 秒說「繼續前進」
     if (!S._v || S._v < 160) { if (!S.periodic) S.periodic = 30; S._v = 160; saveSettings(); }
   })();
@@ -193,9 +201,10 @@
     selectBlock(b.id);
   }
   function deleteBlock(id) {
+    const gone = st.blocks.find(b => b.id === id);
+    if (gone) { const arch = LS.get('archived', []); arch.push(Object.assign({}, gone, { deletedAt: Date.now() })); LS.set('archived', arch); }
     st.blocks = st.blocks.filter(b => b.id !== id); saveBlocks();
-    for (const k of ['net_', 'prog_', 'wc_', 'sess_', 'rec_']) LS.del(k + id);
-    photoDelBlock(id);
+    for (const k of ['net_', 'prog_', 'wc_', 'sess_']) LS.del(k + id); // 派報紀錄、照片保留，不刪
     if (st.block && st.block.id === id) { st.block = null; st.net = null; LS.del('curBlock'); renderNet(); renderAddrs(); }
     renderBlocks();
   }
@@ -357,6 +366,18 @@
   }
   function updateNeedle() {
     const n = $('#needle'); if (n) n.style.transform = `rotate(${canRotate ? mapBear : 0}deg)`;
+    updateRose();
+  }
+  // 八方羅盤：外圈跟著地圖轉（北永遠指向真正的北方），箭頭是前進方向
+  function updateRose() {
+    const b = canRotate ? mapBear : 0, h = currentHeading();
+    const g0 = $('#roseG'); if (!g0) return;
+    g0.setAttribute('transform', `rotate(${b})`);
+    $$('#roseG text').forEach(t => t.setAttribute('transform', `rotate(${-b} ${t.getAttribute('x')} ${t.getAttribute('y')})`));
+    const ar = $('#roseArrow');
+    if (h == null) { ar.style.display = 'none'; $('#roseTxt').textContent = '方向未知'; return; }
+    ar.style.display = ''; ar.setAttribute('transform', `rotate(${h + b})`);
+    $('#roseTxt').textContent = '朝' + C.cardinal(h) + ' ' + Math.round((h + 360) % 360) + '°';
   }
   function applyOrient(say) {
     const h = S.orient === 'heading' && canRotate;
@@ -384,6 +405,7 @@
     if (Date.now() - lastCompassUpd > 250) { lastCompassUpd = Date.now(); updateHeading(); if (meMarker) drawMeCone(); }
   }
   function drawMeCone() {
+    updateRose();
     const el = meMarker && meMarker.getElement(); if (!el) return;
     const cone = el.querySelector('.cone'), hb = currentHeading();
     cone.style.display = hb == null ? 'none' : 'block';
@@ -570,7 +592,7 @@
     ms.setActionHandler('play', () => { keep(); doCmd({ cmd: 'repeat' }); });
     ms.setActionHandler('pause', () => { keep(); doCmd({ cmd: 'repeat' }); });
     try { ms.setActionHandler('previoustrack', () => { keep(); doCmd({ cmd: 'repeat' }); }); } catch (e) { /* 無 */ }
-    try { ms.setActionHandler('nexttrack', () => { keep(); listen(); }); } catch (e) { /* 無 */ }
+    try { ms.setActionHandler('nexttrack', () => { keep(); if (cam.on) shoot(); else listen(); }); } catch (e) { /* 無 */ }
   }
 
   /* ---------- 導航 ---------- */
@@ -593,7 +615,7 @@
     $('#stCapRow').style.opacity = loop ? 1 : 0.45;
   }
   async function beginNav(cap, loop) {
-    enableCompass();
+    enableCompass(); enableMotion();
     // 在點擊當下啟動語音（iPhone 規定）
     say('準備開始', { noLast: true });
     beep(660, 60);
@@ -789,7 +811,7 @@
     const p = progressNums();
     const rec = { id: uid(), name: b.name, t0: s0.t0 || Date.now(), t1: Date.now(), track: s0.track, loops: s0.loops, len: Math.round(len),
       flyers: s0.loops.reduce((a, l) => a + (l.actual || l.est || 0), 0), pct: p.all ? Math.floor(p.done / p.all * 100) : 0 };
-    const recs = LS.get('rec_' + b.id, []); recs.push(rec); while (recs.length > 10) recs.shift();
+    const recs = LS.get('rec_' + b.id, []); recs.push(rec); // 派報紀錄永遠保留，不刪舊的
     if (!LS.set('rec_' + b.id, recs)) return;
     st.covered.clear(); st.skipped.clear(); st.hits.clear(); saveProgress(true);
     sess = { bid: b.id, t0: 0, track: [], loops: [] }; LS.del('sess_' + b.id);
@@ -806,7 +828,7 @@
       const d = new Date(r.t1), mins = Math.round((r.t1 - r.t0) / 60000);
       return `<div class="blk" data-rid="${r.id}"><div class="hd"><b>${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}</b><span class="meta">${r.loops.length} 圈</span></div>
         <div class="meta">走了 ${fmtDist(r.len)}，約 ${r.flyers} 張，${mins >= 60 ? Math.floor(mins / 60) + ' 小時 ' : ''}${mins % 60} 分鐘</div>
-        <div class="btnrow"><button class="btn sm primary" data-ract="show">在地圖上看路徑</button><button class="btn sm" data-ract="gpx">匯出 GPX</button><button class="btn sm danger" data-ract="del">刪除</button></div></div>`;
+        <div class="btnrow"><button class="btn sm primary" data-ract="show">在地圖上看路徑</button><button class="btn sm" data-ract="gpx">匯出 GPX</button></div></div>`;
     }).join('');
   }
   function showRecord(r) {
@@ -829,6 +851,55 @@
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name;
     document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
+  /* ---------- 步伐推算（騎樓下 GPS 不準時，用計步＋路線推算位置） ---------- */
+  let motionAsked = false, pdrPos = null;
+  const pdr = { lp: 9.8, armed: true, lastStep: 0, steps: 0 };
+  function enableMotion() {
+    if (motionAsked || !window.DeviceMotionEvent) return;
+    motionAsked = true;
+    // 先掛上監聽；有沒有資料由 iPhone 的「動作與方向」權限決定
+    window.addEventListener('devicemotion', onMotion);
+    if (typeof DeviceMotionEvent.requestPermission === 'function') DeviceMotionEvent.requestPermission().catch(() => {});
+  }
+  function onMotion(e) {
+    const a = e.accelerationIncludingGravity; if (!a || a.x == null) return;
+    const mag = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+    pdr.lp = pdr.lp * 0.75 + mag * 0.25;
+    const now = Date.now();
+    if (pdr.armed && pdr.lp > 10.9 && now - pdr.lastStep > 330) { pdr.armed = false; pdr.lastStep = now; pdr.steps++; onStep(now); }
+    else if (!pdr.armed && pdr.lp < 9.6) pdr.armed = true;
+  }
+  function gpsPoor(now) { return !gps.fix || gps.fix.acc > 15 || now - gps.lastGood > 2500; }
+  function pdrOn() { return nav && nav.pdrUsed && pdrPos && Date.now() - pdr.lastStep < 4000; }
+  function onStep(now) {
+    if (!nav || !S.pdr || nav.far || nav.paused === 'x' || !gpsPoor(now)) return;
+    const R = nav.route;
+    nav.tr.s = Math.min(R.total, nav.tr.s + S.stepLen);
+    nav.pdrUsed = true;
+    pdrPos = C.pointAtRoute(R, nav.tr.s);
+    // 小藍點移到推算的位置
+    if (meMarker) { meMarker.setLatLng(pdrPos); if (accCircle) accCircle.setLatLng(pdrPos); if (st.follow) map.panTo(pdrPos, { animate: false }); }
+    setPill('mid', '步伐推算中');
+    progressAt(nav.tr.s, now, pdrPos);
+  }
+  // 依路線上的位置 s 做：標已派、判斷一圈結束、播報、更新畫面（GPS 與步伐推算共用）
+  function progressAt(s, now, p) {
+    const R = nav.route;
+    let changed = false;
+    while (nav.stepPtr < R.steps.length && R.steps[nav.stepPtr].d1 <= s + 3) {
+      const stp = R.steps[nav.stepPtr], c = st.net.chains[stp.c];
+      if (!stp.dead && !stp.markLater && c.req && markItem({ c: stp.c, side: stp.side })) { restyle(c.i); changed = true; }
+      nav.stepPtr++;
+    }
+    if (changed) { saveProgress(); renderBlocks(); }
+    if (nav.loop) {
+      if (nav.loop.phase === 'deliver' && !loopRemaining().length) return goBackToPark();
+      if (nav.loop.phase === 'return' && (C.dist(p, nav.loop.park) < 20 || s >= R.total - 8)) return loopFinished();
+    } else if (!remainingItems().length) return finishNav();
+    announce(s, now);
+    updateCard(s); updateRouteLine(s);
   }
 
   /* ---------- 拍照（照片存在 IndexedDB，記錄位置與時間） ---------- */
@@ -891,24 +962,86 @@
     $('#phNote').value = ph.note || '';
     openSheet('shPhoto');
   }
-  $('#fabCam').onclick = () => {
-    if (!st.block) { toast('先選一個區塊，照片會存在那個區塊裡'); return; }
-    $('#camInput').value = ''; $('#camInput').click();
-  };
-  $('#camInput').onchange = async () => {
-    const f = $('#camInput').files[0]; if (!f || !st.block) return;
-    const p = gps.fix ? [gps.fix.lat, gps.fix.lon] : [map.getCenter().lat, map.getCenter().lng];
-    busy(true, '存照片中…');
+  // App 內相機：可以用語音「準備拍照」→「照相」
+  const cam = { on: false, stream: null };
+  async function openCam(byVoice, shootSoon) {
+    if (!st.block) { const m = '先選一個區塊，照片會存在那個區塊裡'; toast(m); if (byVoice) say(m, { noLast: true }); return; }
+    if (cam.on) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('#camInput').value = ''; $('#camInput').click(); return; }
     try {
-      const blob = await shrink(f);
+      cam.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    } catch (e) {
+      const m = '打不開相機，請到「設定 › Safari › 相機」允許，或按「iPhone 相機」';
+      toast(m, 5000); if (byVoice) say('打不開相機，請按右邊的相機按鈕', { noLast: true });
+      $('#camView').classList.add('fail'); $('#camView').style.display = 'flex'; cam.on = true;
+      return;
+    }
+    const v = $('#camVid'); v.srcObject = cam.stream; v.play().catch(() => {});
+    $('#camView').classList.remove('fail'); $('#camView').style.display = 'flex'; cam.on = true;
+    $('#camHint').textContent = byVoice ? '請說「照相」，或按白色按鈕' : '按白色按鈕拍照；也可以按「說」再說「照相」';
+    if (byVoice) say(shootSoon ? '相機打開了，兩秒後拍照' : '相機打開了，說照相就拍', { noLast: true });
+    if (shootSoon) setTimeout(() => { if (cam.on) shoot(); }, 2200);
+  }
+  function closeCam() {
+    if (cam.stream) cam.stream.getTracks().forEach(t => t.stop());
+    cam.stream = null; cam.on = false; $('#camView').style.display = 'none'; $('#camVid').srcObject = null;
+    try { if (rec) rec.stop(); } catch (e) { /* 無 */ }
+  }
+  async function shoot() {
+    const v = $('#camVid');
+    if (!cam.on || !v.videoWidth) { toast('相機還沒準備好'); return; }
+    const k = Math.min(1, 1600 / Math.max(v.videoWidth, v.videoHeight));
+    const cvs = document.createElement('canvas'); cvs.width = Math.round(v.videoWidth * k); cvs.height = Math.round(v.videoHeight * k);
+    cvs.getContext('2d').drawImage(v, 0, 0, cvs.width, cvs.height);
+    $('#camFlash').classList.remove('go'); void $('#camFlash').offsetWidth; $('#camFlash').classList.add('go');
+    beep(1200, 60);
+    const blob = await new Promise(r => cvs.toBlob(r, 'image/jpeg', 0.82));
+    closeCam();
+    if (blob) await savePhotoBlob(blob, true);
+  }
+  async function savePhotoBlob(blob, quiet) {
+    const p = pdrPos || (gps.fix ? [gps.fix.lat, gps.fix.lon] : [map.getCenter().lat, map.getCenter().lng]);
+    try {
       const ph = { id: uid(), bid: st.block.id, lat: p[0], lon: p[1], acc: gps.fix ? gps.fix.acc : null, t: Date.now(), note: '', place: placeLabel(p), blob };
       await photoPut(ph);
-      busy(false);
       await renderPhotos();
-      if (nav) { say('照片存好了', { noLast: true }); toast('照片存好了' + (ph.place ? '：' + ph.place : '')); }
-      else openPhoto(ph);
-    } catch (e) { busy(false); toast('照片沒有存成功：' + (e.message || '手機空間不足')); }
+      say('照好了' + (ph.place ? '，' + ph.place : ''), { noLast: true });
+      toast('照片存好了' + (ph.place ? '：' + ph.place : ''));
+      if (!quiet && !nav) openPhoto(ph);
+    } catch (e) { toast('照片沒有存成功：' + (e.message || '手機空間不足')); }
+  }
+  $('#fabCam').onclick = () => openCam(false);
+  $('#camShot').onclick = () => shoot();
+  $('#camClose').onclick = () => closeCam();
+  $('#camSys').onclick = () => { closeCam(); $('#camInput').value = ''; $('#camInput').click(); };
+  $('#camMic').onclick = () => listen();
+  $('#camInput').onchange = async () => {
+    const f = $('#camInput').files[0]; if (!f || !st.block) return;
+    busy(true, '存照片中…');
+    try { const blob = await shrink(f); busy(false); await savePhotoBlob(blob, false); }
+    catch (e) { busy(false); toast('照片沒有存成功：' + (e.message || '手機空間不足')); }
   };
+  // 一鍵把今天拍的照片存到相簿（iPhone 分享選單 →「儲存影像」）
+  let todayFiles = [];
+  async function loadToday() {
+    const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+    let all = []; try { all = await dbDo('readonly', s0 => s0.getAll()); } catch (e) { all = []; }
+    const list = all.filter(ph => ph.t >= d0.getTime()).sort((a, b) => a.t - b.t);
+    todayFiles = list.map(ph => new File([ph.blob], `派報_${fmtTime(ph.t).replace(/[\/: ]/g, '')}_${ph.id.slice(-4)}.jpg`, { type: 'image/jpeg', lastModified: ph.t }));
+    $$('.todayBtn').forEach(b => { b.textContent = todayFiles.length ? `把今天的 ${todayFiles.length} 張照片存到相簿` : '今天還沒有拍照'; b.disabled = !todayFiles.length; });
+    return todayFiles;
+  }
+  function saveToday() {
+    if (!todayFiles.length) { toast('今天還沒有拍照'); return; }
+    if (navigator.canShare && navigator.canShare({ files: todayFiles })) {
+      navigator.share({ files: todayFiles }).then(() => toast('完成')).catch(err => { if (err && err.name !== 'AbortError') toast('沒有存成功，請再按一次'); });
+      toast('在選單裡按「儲存 ' + todayFiles.length + ' 張影像」', 5000);
+    } else {
+      todayFiles.forEach((f, i) => setTimeout(() => { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }, i * 400));
+      toast('正在下載 ' + todayFiles.length + ' 張照片');
+    }
+  }
+  $$('.todayBtn').forEach(b => b.onclick = saveToday);
   $('#phSave').onclick = async () => { if (!curPhoto) return; curPhoto.note = $('#phNote').value.trim(); await photoPut(curPhoto); closeSheets(); toast('備註已儲存'); };
   $('#phMap').onclick = () => { if (!curPhoto) return; closeSheets(); st.follow = false; $('#fabFollow').classList.remove('on'); map.setView([curPhoto.lat, curPhoto.lon], 19); };
   $('#phDl').onclick = () => {
@@ -922,6 +1055,7 @@
     askConfirm('刪除這張照片？', '刪掉就找不回來。', '刪除照片', true).then(async ok => { if (!ok) return; closeSheets(); await photoDel(ph.id); curPhoto = null; await renderPhotos(); toast('照片已刪除'); });
   };
   async function openPhotoList() {
+    loadToday();
     if (!st.block) return;
     let list = []; try { list = await photoAll(st.block.id); } catch (e) { /* 無 */ }
     list.sort((a, b) => b.t - a.t);
@@ -1121,7 +1255,8 @@
     $('#navText').textContent = m.type === 'start' ? m.text.replace(/^開始派報，?/, '') : m.text.replace(/，右進左出：.*$/, '（右進左出）');
     const step = r.steps.find(x => x.d1 > s) || r.steps[r.steps.length - 1];
     const cn = step ? st.net.chains[step.c].name : '';
-    $('#navRoad').textContent = (cn ? '目前：' + cn : '') + (nav.paused ? '　語音暫停中' : '');
+    const g = gpsStreet(), h = currentHeading();
+    $('#navRoad').textContent = '定位：' + (g && g.name ? g.name + (g.no ? ' ' + g.no + '號' : '') : '不在道路上') + (g && g.name && cn && g.name !== cn ? '（規劃：' + cn + '）' : '') + (h != null ? '｜朝' + C.cardinal(h) + ' ' + Math.round((h + 360) % 360) + '°' : '') + (pdrOn() ? '｜步伐推算' : '') + (nav.paused ? '｜語音暫停' : '');
   }
 
   function navTick(force) {
@@ -1129,6 +1264,8 @@
     const f = gps.fix, p = [f.lat, f.lon], now = Date.now();
     const dt = Math.min(20, Math.max(1, (now - nav.lastFixT) / 1000)); nav.lastFixT = now;
     const off = Math.max(S.offRoute, Math.min(f.acc, 40) * 0.8);
+    if (nav.pdrUsed && f.acc <= 12) { nav.tr.s = Math.max(0, nav.tr.s - 30); nav.pdrUsed = false; } // 好訊號回來：允許往回校正
+    pdrPos = null;
     const r = C.trackUpdate(nav.tr, p, gps.bear, gps.speed, off, 40 + Math.max(1.5, gps.speed) * dt * 2);
     const R = nav.route;
     sessTrack(p);
@@ -1158,8 +1295,14 @@
         nav.far = true; nav.farD = C.dist(p, C.pointAtRoute(R, r.s));
         if (now - nav.lastFarSay > 90000) { nav.lastFarSay = now; say(`離路線還有${sayDist(nav.farD)}，先走回藍線`); }
       } else {
-        if (!nav.offSince) nav.offSince = now;
-        if (now - nav.offSince > 6000 && nav.tr.offCount >= 3 && now - nav.lastReroute > 12000) { reroute('偏離路線，重新規劃'); return; }
+        if (!nav.offSince) { nav.offSince = now; nav.offWarned = false; }
+        const g = gpsStreet(), stp = curStep(), planned = stp ? st.net.chains[stp.c].name : '';
+        if (!nav.offWarned && now - nav.offSince > 2500 && nav.tr.offCount >= 2) {
+          nav.offWarned = true;
+          const here = g && (g.name || g.addrStreet) ? (g.name || g.addrStreet) + (g.no ? g.no + '號附近' : '') : '不在道路上的地方';
+          say(`注意，定位顯示你在${here}${planned && g && g.name !== planned ? '，不在規劃的' + planned : '，離開了路線'}。如果定位錯了，請按說指令，說出你在哪裡。`);
+        }
+        if (now - nav.offSince > 9000 && nav.tr.offCount >= 3 && now - nav.lastReroute > 12000) { reroute(g && g.name ? `從${g.name}重新規劃` : '偏離路線，重新規劃'); return; }
       }
     } else nav.offSince = 0;
 
@@ -1195,21 +1338,27 @@
       if (m.type === 'uturn') say(m.text + tail);
       else say(`${S.preDist > 0 ? '' : whereNow()}${d > 3 ? r5(d) + '公尺後' : ''}${m.text}${tail}`);
     } else if (S.periodic > 0 && now - nav.lastSpeak > S.periodic * 1000 && d > S.nearDist + 15) {
-      say('繼續前進', { noLast: true });
+      const stp = curStep();
+      say(whereNow() + (stp ? C.straightText(st.net, stp) : '請沿藍線直走'), { noLast: true });
     }
     nav.flags.set(nav.mi, f);
   }
   // 「現在在萬大路，大約在 410 號前面，」
+  // GPS 實際定位到哪條路（不是規劃的那條）
+  function gpsStreet() {
+    if (!st.net || !gps.fix) return null;
+    const p = pdrPos || [gps.fix.lat, gps.fix.lon];
+    const nc = C.nearestChain(st.net, p, 30, c => !c.virtual && !!c.name);
+    const nm = nc ? st.net.chains[nc.c].name : '';
+    const a = C.nearestAddr(st.net, p, 25, nm || undefined) || C.nearestAddr(st.net, p, 15);
+    return { name: nm, no: a ? String(a.h).replace(/號$/, '') : '', addrStreet: a ? a.s : '', d: nc ? nc.d : null };
+  }
+  function curStep() { if (!nav) return null; const R = nav.route, s = nav.tr.s; return R.steps.find(x => x.d1 > s) || R.steps[R.steps.length - 1]; }
+  // 「現在定位在中山路二段255巷，大約在12號前面，」
   function whereNow() {
-    if (!nav || !gps.fix) return '';
-    const R = nav.route, s = nav.tr.s;
-    const stp = R.steps.find(x => x.d1 > s) || R.steps[R.steps.length - 1];
-    const nm = stp ? st.net.chains[stp.c].name : '';
-    const p = [gps.fix.lat, gps.fix.lon];
-    const a = C.nearestAddr(st.net, p, 25, nm || undefined) || (nm ? null : C.nearestAddr(st.net, p, 20));
-    const no = a ? String(a.h).replace(/號$/, '') : '';
-    if (!nm && !no) return '';
-    return '現在在' + (nm || '') + (no ? '，大約在' + no + '號前面' : '') + '，';
+    const g = gpsStreet(); if (!g) return '';
+    if (!g.name && !g.no) return '現在定位不在道路上，';
+    return '現在定位在' + (g.name || g.addrStreet || '') + (g.no ? '，大約在' + g.no + '號前面' : '') + '，';
   }
   function checkMarks(p, now) {
     for (const mk of st.marks) {
@@ -1282,24 +1431,34 @@
     }
     if (rec) { try { rec.abort(); } catch (e) { /* 無 */ } }
     if (tts.ok) speechSynthesis.cancel();
-    rec = new SR(); rec.lang = 'zh-TW'; rec.interimResults = false; rec.maxAlternatives = 4; rec.continuous = false;
+    // 連續聽：一次按鈕可以接著說好幾句（例如「準備拍照」→「照相」）
+    rec = new SR(); rec.lang = 'zh-TW'; rec.interimResults = false; rec.maxAlternatives = 4; rec.continuous = !onText;
     const box = $('#listen'); $('#listenText').textContent = onText ? '請說門牌或巷名' : '請說指令';
-    box.style.display = 'flex'; beep(880, 100);
-    let got = false;
-    const tmo = setTimeout(() => { try { rec.stop(); } catch (e) { /* 無 */ } }, 8000);
+    if (!cam.on) box.style.display = 'flex';
+    beep(880, 100);
+    let got = false, tmo = 0;
+    const arm = ms => { clearTimeout(tmo); tmo = setTimeout(() => { try { rec.stop(); } catch (e) { /* 無 */ } }, ms); };
+    arm(8000);
+    const r0 = rec;
     rec.onresult = e => {
-      got = true; clearTimeout(tmo); box.style.display = 'none';
-      const alts = [...e.results[0]].map(a => a.transcript);
-      if (onText) return onText(alts[0]);
-      for (const a of alts) { const c = C.parseCommand(a); if (c.cmd !== 'unknown' && c.cmd !== 'none') return doCmd(c, a); }
-      doCmd(C.parseCommand(alts[0]), alts[0]);
+      got = true; box.style.display = 'none';
+      const res = e.results[e.results.length - 1];
+      const alts = [...res].map(a => a.transcript);
+      if (onText) { clearTimeout(tmo); return onText(alts[0]); }
+      let c = null, raw = alts[0];
+      for (const a of alts) { const x = C.parseCommand(a); if (x.cmd !== 'unknown' && x.cmd !== 'none') { c = x; raw = a; break; } }
+      if (!c) c = C.parseCommand(alts[0]);
+      if (cam.on && c.cmd === 'unknown') { arm(20000); return; } // 相機開著：沒聽懂就繼續等「照相」
+      doCmd(c, raw);
+      if (cam.on) arm(20000); // 相機開著就繼續聽「照相」「取消」
+      else { clearTimeout(tmo); try { r0.stop(); } catch (err) { /* 無 */ } }
     };
     rec.onerror = e => {
       clearTimeout(tmo); box.style.display = 'none';
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') toast('請到「設定 › 一般 › 鍵盤」打開「聽寫」，並允許 Safari 使用麥克風', 6000);
       else if (e.error !== 'aborted' && e.error !== 'no-speech') toast('沒聽清楚，請再按一次');
     };
-    rec.onend = () => { clearTimeout(tmo); box.style.display = 'none'; if (!got) beep(440, 90); };
+    rec.onend = () => { clearTimeout(tmo); box.style.display = 'none'; if (!got) beep(440, 90); if (cam.on) $('#camHint').textContent = '按白色按鈕拍照（要用語音，再按一下「說」）'; };
     try { rec.start(); } catch (e) { box.style.display = 'none'; toast('語音辨識無法啟動'); }
   }
   $('#listen').addEventListener('click', () => { try { rec && rec.abort(); } catch (e) { /* 無 */ } $('#listen').style.display = 'none'; });
@@ -1318,7 +1477,9 @@
         say(m, { noLast: true }); toast(m); break;
       }
       case 'toilet': findToilet(); break;
-      case 'photo': { const m = 'iPhone 規定要用手按才能開相機，請按右邊的相機按鈕'; say(m, { noLast: true }); toast(m); break; }
+      case 'campre': openCam(true); break;
+      case 'photo': if (cam.on) shoot(); else openCam(true, true); break;
+      case 'camclose': closeCam(); say('相機關了', { noLast: true }); break;
       case 'nextpark': sayNextPark(); break;
       case 'streetdone': streetDone(); break;
       case 'mark': addMark(c.arg, c.arg === 'other' ? c.note : ''); break;
@@ -1391,6 +1552,7 @@
     closeSheets(true);
     if (id === 'shBlocks') renderBlockList();
     if (id === 'shSettings' || id === 'shLayer') syncSettingsUI();
+    if (id === 'shSettings') loadToday();
     $('#backdrop').style.display = 'block'; $('#' + id).classList.add('open');
   }
   function closeSheets(keepBackdrop) {
@@ -1450,7 +1612,7 @@
     else if (act === 'done') { closeSheets(); askCompleteBlock(false); }
     else if (act === 'recs') { renderRecList(); openSheet('shRecs'); }
     else if (act === 'photos') openPhotoList();
-    else if (act === 'del') { askConfirm('刪除「' + b.name + '」？', '區塊、圖資和派報進度會一起刪除，刪掉就找不回來。', '刪除區塊', true).then(ok => { if (!ok) return; deleteBlock(id); toast('已刪除「' + b.name + '」'); }); }
+    else if (act === 'del') { askConfirm('刪除「' + b.name + '」？', '區塊、圖資和目前進度會刪除；這個區塊的派報紀錄和照片會保留。', '刪除區塊', true).then(ok => { if (!ok) return; deleteBlock(id); toast('已刪除「' + b.name + '」'); }); }
   });
 
   /* ---------- 設定 ---------- */
@@ -1461,7 +1623,7 @@
     });
     $$('[data-show]').forEach(el => {
       const k = el.dataset.show, v = S[k];
-      el.textContent = k === 'rate' ? Number(v).toFixed(2) + ' 倍' : k === 'density' ? v + ' 張' : (k === 'preDist' && +v === 0 ? '不預告' : v + ' 公尺');
+      el.textContent = k === 'rate' ? Number(v).toFixed(2) + ' 倍' : k === 'density' ? v + ' 張' : k === 'stepLen' ? Number(v).toFixed(2) + ' 公尺' : (k === 'preDist' && +v === 0 ? '不預告' : v + ' 公尺');
     });
     $$('#layerBtns .btn').forEach(b => b.classList.toggle('primary', b.dataset.layer === S.layer));
   }
@@ -1482,8 +1644,8 @@
   });
   $('#ttsTest').onclick = () => say(`前方${S.preDist || 30}公尺右轉，進入中山路一段120巷。${S.nearDist}公尺後右轉。`, { noLast: true });
   $('#wipeAll').onclick = () => {
-    askConfirm('刪除所有資料？', '所有區塊、進度、標記和設定都會刪除，刪掉就找不回來。', '全部刪除', true).then(ok => { if (!ok) return;
-    Object.keys(localStorage).filter(k => k.startsWith('pb_')).forEach(k => localStorage.removeItem(k));
+    askConfirm('刪除區塊與進度？', '區塊、進度、標記和設定會刪除。派報紀錄、照片和升級前備份會保留，不會刪。', '刪除', true).then(ok => { if (!ok) return;
+    Object.keys(localStorage).filter(k => k.startsWith('pb_') && !/^pb_(rec_|bak_|archived)/.test(k)).forEach(k => localStorage.removeItem(k));
     location.reload(); });
   };
   $$('#layerBtns .btn').forEach(b => (b.onclick = () => { setLayer(b.dataset.layer); }));
@@ -1614,7 +1776,6 @@
     const act = btn.dataset.ract;
     if (act === 'show') { closeSheets(); st.follow = false; $('#fabFollow').classList.remove('on'); showRecord(r); }
     else if (act === 'gpx') download(`派報_${st.block.name}_${new Date(r.t1).toISOString().slice(0, 10)}.gpx`, gpx(r), 'application/gpx+xml');
-    else if (act === 'del') askConfirm('刪除這筆派報紀錄？', '刪掉就找不回來。', '刪除', true).then(ok => { if (!ok) return; LS.set('rec_' + st.block.id, recs.filter(x => x !== r)); L_rec.clearLayers(); renderRecList(); openSheet('shRecs'); });
   });
   $('#fabRec').onclick = () => { L_rec.clearLayers(); $('#fabRec').style.display = 'none'; };
   // 公廁
@@ -1626,6 +1787,17 @@
     download('派報系統備份_' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify({ app: 'paibao', v: APP_VERSION, t: Date.now(), data }), 'application/json');
   };
   $('#bkImport').onclick = () => $('#bkFile').click();
+  // 還原備份時，派報紀錄用「合併」：手機裡已有的紀錄不會被蓋掉
+  function mergeRecs(keep) {
+    for (const [k, v] of Object.entries(keep)) {
+      let cur = [], old = [];
+      try { cur = JSON.parse(localStorage.getItem(k) || '[]'); } catch (e) { cur = []; }
+      try { old = JSON.parse(v || '[]'); } catch (e) { old = []; }
+      const ids = new Set(cur.map(r => r.id || JSON.stringify(r)));
+      for (const r of old) if (!ids.has(r.id || JSON.stringify(r))) cur.push(r);
+      localStorage.setItem(k, JSON.stringify(cur));
+    }
+  }
   $('#bkFile').onchange = () => {
     const f = $('#bkFile').files[0]; if (!f) return;
     f.text().then(t => {
@@ -1633,8 +1805,10 @@
       if (!j || j.app !== 'paibao' || !j.data) { toast('這不是派報系統的備份檔'); return; }
       askConfirm('用備份還原？', '手機裡現在的區塊和進度會被備份檔的內容取代。', '還原', true).then(ok => {
         if (!ok) return;
-        for (const k of Object.keys(localStorage)) if (k.startsWith('pb_')) localStorage.removeItem(k);
+        const keep = {}; for (const k of Object.keys(localStorage)) if (/^pb_(rec_|archived)/.test(k)) keep[k] = localStorage.getItem(k);
+        for (const k of Object.keys(localStorage)) if (k.startsWith('pb_') && !/^pb_(rec_|bak_|archived)/.test(k)) localStorage.removeItem(k);
         for (const [k, v] of Object.entries(j.data)) localStorage.setItem(k, v);
+        mergeRecs(keep);
         location.reload();
       });
     });
@@ -1644,8 +1818,10 @@
     if (!j || !j.data) { toast('沒有升級前的備份'); return; }
     askConfirm('還原到升級前的進度？', '會把區塊、進度和標記改回 ' + new Date(j.t).toLocaleString('zh-TW') + ' 升級前的狀態（圖資保留）。', '還原', true).then(ok => {
       if (!ok) return;
-      for (const k of Object.keys(localStorage)) if (k.startsWith('pb_') && !k.startsWith('pb_net_') && !k.startsWith('pb_bak_')) localStorage.removeItem(k);
+      const keep = {}; for (const k of Object.keys(localStorage)) if (/^pb_(rec_|archived)/.test(k)) keep[k] = localStorage.getItem(k);
+      for (const k of Object.keys(localStorage)) if (k.startsWith('pb_') && !k.startsWith('pb_net_') && !/^pb_(rec_|bak_|archived)/.test(k)) localStorage.removeItem(k);
       for (const [k, v] of Object.entries(j.data)) localStorage.setItem(k, v);
+      mergeRecs(keep);
       location.reload();
     });
   };
@@ -1679,7 +1855,7 @@
         if (st.covered.has(c.key) || st.skipped.has(c.key)) { st.covered.delete(c.key); st.skipped.delete(c.key); st.covered.add(c.key + ':' + other); }
         else if (st.covered.has(c.key + ':' + sd)) st.covered.delete(c.key + ':' + sd);
         else st.covered.add(c.key + ':' + sd);
-        toast((c.name || '這段') + '：' + ((sd === 'f') === c.fShun ? '紅色（順向）' : '黑色（逆向）') + '這一邊' + (sideDone(c, sd) ? '已派' : '改為未派'));
+        toast((c.name || '這段') + '：' + ((sd === 'f') === c.fShun ? '紅色（順向）' : '黑色（逆向）') + (c.oddSide ? (sd === c.oddSide ? '單號' : '雙號') : '') + '這一邊' + (sideDone(c, sd) ? '已派' : '改為未派'));
       } else if (isDone(c)) { st.covered.delete(c.key); st.skipped.delete(c.key); st.hits.delete(c.key); }
       else st.covered.add(c.key);
       restyle(c.i); saveProgress(true); renderBlocks();
@@ -1748,5 +1924,5 @@
   if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
     toast('要用 https 網址開啟，iPhone 才會給定位', 6000);
   }
-  window.__pb = { map, st, gps, C, get nav() { return nav; }, onFix, runText, startNav };
+  window.__pb = { map, st, gps, C, get pdr() { return pdr; }, get S() { return S; }, get nav() { return nav; }, onFix, runText, startNav };
 })();

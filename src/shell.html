@@ -47,8 +47,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .plate .dist{font-size:40px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums;letter-spacing:.5px}
 .plate .dist small{font-size:20px;font-weight:700;margin-left:4px}
 .plate .instr{font-size:19px;font-weight:600;line-height:1.35;margin-top:2px}
-.plate-sub{display:flex;justify-content:space-between;gap:10px;padding:6px 8px 2px;font-size:14px;opacity:.92;font-variant-numeric:tabular-nums}
-.plate-sub span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plate-sub{display:flex;flex-direction:column;gap:2px;padding:6px 8px 2px;font-size:14px;opacity:.95;font-variant-numeric:tabular-nums;line-height:1.35}
+.plate-sub span:first-child{font-weight:700}
 #caption{position:fixed;left:16px;right:16px;z-index:590;top:calc(env(safe-area-inset-top) + 150px);display:none;justify-content:center;pointer-events:none}
 #caption span{background:rgba(20,26,34,.82);color:#fff;border-radius:10px;padding:8px 12px;font-size:15px;line-height:1.4;max-width:100%}
 
@@ -172,6 +172,24 @@ body.mode-nav #sideLegend{display:flex}
 .pgrid button{aspect-ratio:1;border-radius:10px;background:#263238 center/cover no-repeat;position:relative;overflow:hidden}
 .pgrid button span{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);color:#fff;font-size:11px;padding:2px 4px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .leaflet-popup-content img{width:200px;max-height:220px;object-fit:cover;border-radius:8px;display:block;margin:6px 0}
+#rose{position:fixed;left:12px;top:calc(env(safe-area-inset-top) + 86px);z-index:480;width:92px;text-align:center;pointer-events:none}
+#rose svg{width:92px;height:92px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.25))}
+#roseTxt{margin-top:2px;background:rgba(255,255,255,.92);border-radius:8px;font-size:13px;font-weight:800;color:#1E242C;padding:2px 4px;font-variant-numeric:tabular-nums}
+body.mode-nav #rose{top:calc(env(safe-area-inset-top) + 212px)}
+body.mode-nav #caption{top:auto;bottom:calc(env(safe-area-inset-bottom) + 250px);right:80px}
+body.mode-draw #rose,body.mode-bedit #rose,body.mode-edit #rose{display:none}
+#camView{position:fixed;inset:0;z-index:1400;background:#000;display:none;flex-direction:column;align-items:center;justify-content:center}
+#camVid{width:100%;height:100%;object-fit:cover}
+#camView.fail #camVid,#camView #camFail{display:none}
+#camView.fail #camFail{display:block;color:#fff;font-size:17px;line-height:1.6;padding:0 28px;text-align:center}
+#camView.fail #camShot,#camView.fail #camMic{visibility:hidden}
+#camHint{position:absolute;top:calc(env(safe-area-inset-top) + 16px);left:16px;right:16px;text-align:center;color:#fff;font-size:17px;font-weight:700;text-shadow:0 1px 4px #000}
+#camFlash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+#camFlash.go{animation:flash .35s ease-out}
+@keyframes flash{0%{opacity:.9}100%{opacity:0}}
+.camBar{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 22px);display:flex;align-items:center;justify-content:space-around}
+.camBar button{color:#fff;font-size:16px;font-weight:700;min-width:64px;min-height:48px}
+#camShot{width:78px;height:78px;border-radius:50%;background:#fff;border:5px solid rgba(255,255,255,.45);background-clip:padding-box}
 .vtx.sel{background:#C2382F;color:#fff;border-color:#fff}
 .mid{width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.9);border:2px dashed var(--blue);color:var(--blue);font:700 16px/17px var(--font);text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.3);cursor:pointer}
 .blockchip small .ver{margin-left:8px;opacity:.75}
@@ -204,7 +222,7 @@ body.mode-draw #cross{display:block}
 <div id="map"></div>
 
 <header id="top">
-  <button class="blockchip" id="btnBlock" aria-label="選擇區塊"><small>目前區塊<span class="ver" id="verChip">v1.6.1</span></small><b id="blockName">還沒有區塊</b></button>
+  <button class="blockchip" id="btnBlock" aria-label="選擇區塊"><small>目前區塊<span class="ver" id="verChip">v1.7.0</span></small><b id="blockName">還沒有區塊</b></button>
   <div class="pill" id="gpsPill"><i></i><span>GPS 定位中</span></div>
 </header>
 
@@ -217,6 +235,28 @@ body.mode-draw #cross{display:block}
 </section>
 <div id="caption"><span></span></div>
 <div id="cross" aria-hidden="true"></div>
+<div id="rose" aria-label="八方羅盤">
+  <svg viewBox="-50 -50 100 100">
+    <circle r="47" fill="rgba(255,255,255,.92)" stroke="#1F4E9E" stroke-width="2"/>
+    <g id="roseG">
+      <g stroke="#56657A" stroke-width="1.5"><path d="M0-44v8M31-31l-5 5M44 0h-8M31 31l-5-5M0 44v-8M-31 31l5-5M-44 0h8M-31-31l5 5"/></g>
+      <path d="M0-30l5 9h-10z" fill="#C2382F"/>
+      <g font-size="10" font-weight="800" text-anchor="middle" dominant-baseline="central" fill="#1E242C">
+        <text x="0" y="-36" fill="#C2382F">北</text><text x="25" y="-25" font-size="8">東北</text><text x="36" y="0">東</text><text x="25" y="25" font-size="8">東南</text>
+        <text x="0" y="36">南</text><text x="-25" y="25" font-size="8">西南</text><text x="-36" y="0">西</text><text x="-25" y="-25" font-size="8">西北</text>
+      </g>
+    </g>
+    <g id="roseArrow"><path d="M0-22L8 10 0 4-8 10z" fill="#1F4E9E" stroke="#fff" stroke-width="1.5"/></g>
+  </svg>
+  <div id="roseTxt">方向未知</div>
+</div>
+<div id="camView" role="dialog" aria-label="相機">
+  <video id="camVid" playsinline muted autoplay></video>
+  <div id="camFlash"></div>
+  <div id="camHint">按白色按鈕拍照</div>
+  <p id="camFail">打不開 App 內相機。請按「iPhone 相機」拍照，或到「設定 › Safari › 相機」選「允許」。</p>
+  <div class="camBar"><button id="camClose" type="button">取消</button><button id="camShot" type="button" aria-label="拍照"></button><button id="camMic" type="button">說</button><button id="camSys" type="button">iPhone 相機</button></div>
+</div>
 <div class="pill" id="sideLegend"><span><i style="background:#0097A7"></i>左側</span><span><i style="background:#8E44AD"></i>右側</span></div>
 
 <div id="fabs">
@@ -274,7 +314,7 @@ body.mode-draw #cross{display:block}
   <div class="grab"></div>
   <h2>我的區塊</h2>
   <div class="legend"><span><i style="background:var(--todo)"></i>待派</span><span><i style="background:var(--done)"></i>小巷已派</span><span><i style="background:#D7263D"></i>大馬路順向已派</span><span><i style="background:#1E242C"></i>大馬路逆向已派</span><span><i style="background:var(--skip)"></i>跳過</span></div>
-  <p class="note">大馬路畫成兩條線，一邊一條：紅色是往北或往東方向的那一側（順向），黑色是另一側（逆向）。只有一種顏色，代表另一邊還沒派。</p>
+  <p class="note">大馬路畫成兩條線，一邊一條：紅色是順向那一側（沿著門牌號碼變大的方向走時的右手邊），黑色是逆向那一側。只有一種顏色，代表另一邊還沒派。分不出門牌方向的路，以往北或往東為順向。</p>
   <div id="blkList"></div>
   <div class="btnrow">
     <button class="btn primary" id="blkDraw">在地圖上圈選</button>
@@ -360,14 +400,20 @@ body.mode-draw #cross{display:block}
   <h3>路線</h3>
   <div class="set"><label>不分圈時，派完要回到起點<small>分小循環時一定會回到停車的地方</small></label><div class="sw"><input type="checkbox" data-set="returnToStart"><span></span></div></div>
   <div class="set"><label>包含步道和樓梯<small>改了之後要重新下載圖資</small></label><div class="sw"><input type="checkbox" data-set="includePaths"><span></span></div></div>
+  <h3>照片</h3>
+  <div class="btnrow"><button class="btn full todayBtn">把今天的照片存到相簿</button></div>
+  <h3>騎樓定位（步伐推算）</h3>
+  <div class="set"><label>GPS 變差時用步伐推算<small>在騎樓下訊號不好時，用手機感應走路的步數，沿著規劃的路線推算位置；訊號好時自動改回 GPS。</small></label><div class="sw"><input type="checkbox" data-set="pdr"><span></span></div></div>
+  <div class="set col"><div class="top"><label>每一步大約多長</label><span class="val" data-show="stepLen"></span></div><input type="range" min="0.4" max="0.9" step="0.05" data-set="stepLen"></div>
   <h3>耳機</h3>
-  <div class="set"><label>用耳機按鍵操作<small>按一下：重複提示；下一首：說指令（試驗中）</small></label><div class="sw"><input type="checkbox" data-set="earBtn"><span></span></div></div>
+  <div class="set"><label>用耳機按鍵操作<small>按一下：重複提示；下一首：說指令，相機打開時是拍照（試驗中）</small></label><div class="sw"><input type="checkbox" data-set="earBtn"><span></span></div></div>
   <h3>資料</h3>
   <p class="note">區塊、派報進度和標記都存在這支手機的 Safari 裡。清除 Safari 網站資料會一起刪掉。</p>
   <div class="btnrow"><button class="btn" id="bkExport">匯出備份</button><button class="btn" id="bkImport">用備份還原</button><button class="btn" id="bkRestore160">還原到升級前</button></div>
   <input type="file" id="bkFile" accept=".json,application/json" hidden>
-  <div class="btnrow"><button class="btn danger" id="wipeAll">刪除所有資料</button></div>
-  <p class="verline">派報系統　版本 <b id="verText">v1.6.1</b>（2026-11-26）<br><span id="verStatus">尚未檢查更新</span></p>
+  <div class="btnrow"><button class="btn danger" id="wipeAll">刪除區塊與進度</button></div>
+  <p class="note">派報紀錄與照片不會被刪除。區塊被刪掉時，它的紀錄仍會保留。</p>
+  <p class="verline">派報系統　版本 <b id="verText">v1.7.0</b>（2026-11-26）<br><span id="verStatus">尚未檢查更新</span></p>
   <div class="btnrow"><button class="btn" id="verCheck">檢查更新</button></div>
 </section>
 
@@ -398,7 +444,7 @@ body.mode-draw #cross{display:block}
 <section class="sheet" id="shRecs">
   <div class="grab"></div>
   <h2>派報紀錄</h2>
-  <p class="note">每次整個區塊派完按「記錄完成」會存一筆，最多保留 10 筆。可以把上次的路徑和停車點顯示在地圖上當參考。</p>
+  <p class="note">每次整個區塊派完按「記錄完成」會存一筆，紀錄會一直保留、不能刪除。可以把上次的路徑和停車點顯示在地圖上當參考。</p>
   <div id="recList"></div>
 </section>
 
@@ -423,6 +469,7 @@ body.mode-draw #cross{display:block}
   <div class="grab"></div>
   <h2>這個區塊的照片</h2>
   <p class="note">照片存在這支手機的 Safari 裡，會記下拍照的位置和時間。點一張可以放大、加備註。</p>
+  <div class="btnrow"><button class="btn primary full todayBtn">把今天的照片存到相簿</button></div>
   <div class="pgrid" id="phGrid"></div>
 </section>
 
@@ -437,7 +484,7 @@ body.mode-draw #cross{display:block}
 <input type="file" id="camInput" accept="image/*" capture="environment" hidden>
 <div id="toast" role="status"></div>
 <div id="busy"><div><span class="spin"></span><span id="busyText">處理中</span></div></div>
-<div class="listen" id="listen"><div class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div><p id="listenText">請說指令</p><small>拍照請按右側相機按鈕。重複、暫停、繼續、跳過、這條派完了、重新規劃、進度、廁所在哪、下一個停車點、標記有狗、你報錯了我在○○路○號</small></div>
+<div class="listen" id="listen"><div class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div><p id="listenText">請說指令</p><small>準備拍照 → 照相、重複、暫停、繼續、跳過、這條派完了、重新規劃、進度、廁所在哪、下一個停車點、標記有狗、你報錯了我在○○路○號</small></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"></script>

@@ -174,7 +174,125 @@ const Core = (() => {
     const jPos = jIds.map(id => nodes[id]);
     const net = { chains, jIds, jPos, adj, poly, addrs: raw.addrs || [], grid: null };
     buildGrid(net);
+    analyzeNumbering(net);
     return net;
+  }
+
+  /* ---------- 門牌：號碼增加方向（順向）與單雙號在哪一側 ---------- */
+  // c.inc：'ab'＝沿 a→b 號碼變大，'ba'＝反過來；c.oddSide：'f'（a→b 右手邊）或 'b'（左手邊）是單號
+  // 依據：①區塊內的門牌資料；②巷弄從母路（萬大路449巷 → 萬大路）那一端起算；③臺灣門牌「面向號碼增加方向，左單右雙」
+  function parentName(nm) {
+    const n = normRoad(nm);
+    if (/\d+弄$/.test(n)) return n.replace(/\d+弄$/, '');
+    if (/\d+巷$/.test(n)) return n.replace(/\d+巷$/, '');
+    return null;
+  }
+  function analyzeNumbering(net) {
+    const groups = new Map();
+    for (const c of net.chains) { if (c.virtual || !c.name) continue; const k = normRoad(c.name); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(c); }
+    // ① 門牌資料：投影到同名路段上，看號碼沿路怎麼變、單號在哪一邊
+    const byStreet = new Map();
+    for (const a of net.addrs) { const k = normRoad(a.s || ''); if (!k || !groups.has(k)) continue; const h = parseInt(norm(a.h), 10); if (isNaN(h)) continue; if (!byStreet.has(k)) byStreet.set(k, []); byStreet.get(k).push({ p: [a.lat, a.lon], h }); }
+    for (const [k, list] of byStreet) {
+      const cs = groups.get(k), per = new Map();
+      for (const ad of list) {
+        let best = null;
+        for (const c of cs) {
+          let along = 0;
+          for (let i = 1; i < c.coords.length; i++) {
+            const pr = projSeg(ad.p, c.coords[i - 1], c.coords[i]), L0 = dist(c.coords[i - 1], c.coords[i]);
+            if (!best || pr.d < best.d) {
+              const kx = Math.cos(ad.p[0] * D2R), A = c.coords[i - 1], B = c.coords[i];
+              const cross = ((B[1] - A[1]) * kx) * (ad.p[0] - A[0]) - (B[0] - A[0]) * ((ad.p[1] - A[1]) * kx);
+              best = { d: pr.d, c, along: along + pr.t * L0, side: cross < 0 ? 'f' : 'b' };
+            }
+            along += L0;
+          }
+        }
+        if (!best || best.d > 35) continue;
+        if (!per.has(best.c.i)) per.set(best.c.i, []);
+        per.get(best.c.i).push({ along: best.along, h: ad.h, side: best.side });
+      }
+      for (const [ci, pts] of per) {
+        const c = net.chains[ci];
+        if (pts.length >= 2) {
+          const ma = pts.reduce((s, x) => s + x.along, 0) / pts.length, mh = pts.reduce((s, x) => s + x.h, 0) / pts.length;
+          const cov = pts.reduce((s, x) => s + (x.along - ma) * (x.h - mh), 0);
+          if (Math.abs(cov) > 1e-6) { c.inc = cov > 0 ? 'ab' : 'ba'; c.incSrc = 'addr'; }
+        }
+        let of = 0, ob = 0, ef = 0, eb = 0;
+        for (const x of pts) { if (x.h % 2) { if (x.side === 'f') of++; else ob++; } else { if (x.side === 'f') ef++; else eb++; } }
+        if (of + ob + ef + eb >= 2 && (of + eb) !== (ob + ef)) c.oddSide = (of + eb) > (ob + ef) ? 'f' : 'b';
+      }
+    }
+    // 同名路段彼此相接時，方向要一致：從已知的往外傳
+    const spread = (cs) => {
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const c of cs) {
+          if (c.inc) continue;
+          for (const o of cs) {
+            if (!o.inc || o === c) continue;
+            const oEnd = o.inc === 'ab' ? o.ib : o.ia, oStart = o.inc === 'ab' ? o.ia : o.ib;
+            if (c.ia === oEnd || c.ib === oStart) { c.inc = 'ab'; c.incSrc = o.incSrc + '+'; changed = true; break; }
+            if (c.ib === oEnd || c.ia === oStart) { c.inc = 'ba'; c.incSrc = o.incSrc + '+'; changed = true; break; }
+          }
+        }
+      }
+    };
+    for (const cs of groups.values()) spread(cs);
+    // ② 巷、弄：從接母路的那一端開始編號
+    for (const [k, cs] of groups) {
+      if (cs.every(c => c.inc)) continue;
+      const par = parentName(k); if (!par) continue;
+      const seeds = new Set();
+      for (const c of cs) for (const j of [c.ia, c.ib]) if (net.adj[j].some(ci => normRoad(net.chains[ci].name || '') === par)) seeds.add(j);
+      if (!seeds.size) continue;
+      // 從母路路口沿著同名路段往外走
+      const seen = new Set(seeds), q = [...seeds];
+      while (q.length) {
+        const j = q.shift();
+        for (const c of cs) {
+          if (c.ia === j && !seen.has(c.ib)) { if (!c.inc) { c.inc = 'ab'; c.incSrc = 'parent'; } seen.add(c.ib); q.push(c.ib); }
+          else if (c.ib === j && !seen.has(c.ia)) { if (!c.inc) { c.inc = 'ba'; c.incSrc = 'parent'; } seen.add(c.ia); q.push(c.ia); }
+        }
+      }
+    }
+    // ③ 單號在哪一邊：沒有資料就用「面向號碼增加方向，左單右雙」
+    for (const c of net.chains) if (c.inc && !c.oddSide) c.oddSide = c.inc === 'ab' ? 'b' : 'f';
+    // 大馬路紅黑：知道號碼方向時，「順向」＝沿號碼變大方向走時的右手邊那一側（紅），另一側是逆向（黑）
+    for (const c of net.chains) if (c.inc) { c.fShun = c.inc === 'ab'; c.shunSrc = 'num'; }
+  }
+  // 8 方位
+  function cardinal(deg) { return ['北', '東北', '東', '東南', '南', '西南', '西', '西北'][Math.round(((deg % 360) + 360) % 360 / 45) % 8]; }
+  // 走這一段時的說法：「走雙號側，順向」或「朝西北（300度）走」
+  function stepGuide(net, x) {
+    const c = net.chains[x.c];
+    const cc = x.fwd ? c.coords : c.coords.slice().reverse();
+    const brg = Math.round(bearing(cc[0], cc[Math.min(cc.length - 1, Math.max(1, Math.floor(cc.length / 2)))]));
+    const dirTxt = `朝${cardinal(brg)}（${brg}度）`;
+    if (!c.inc) return { known: false, brg, dirTxt, side: null, shun: null };
+    const shun = x.fwd === (c.inc === 'ab');
+    const rightSide = x.fwd ? 'f' : 'b';
+    const rightPar = rightSide === c.oddSide ? '單號' : '雙號', leftPar = rightPar === '單號' ? '雙號' : '單號';
+    let side = null;
+    if (x.walk === '右手邊' || x.walk === '另一邊') side = rightPar;
+    else if (x.walk === '左手邊') side = leftPar;
+    return { known: true, brg, dirTxt, shun, side, rightPar, leftPar, dirWord: shun ? '順向' : '逆向' };
+  }
+  // 播報用一句話：「走雙號側，順向（號碼越來越大）」／「單雙號兩邊都派，順向」／「朝西（270度）走，派右手邊」
+  function guideText(net, x, opts = {}) {
+    const g = stepGuide(net, x);
+    if (x.dead) return g.known ? `${g.dirWord}走，這段不用派` : `${g.dirTxt}走，這段不用派`;
+    if (g.known) {
+      const nums = g.shun ? '號碼越來越大' : '號碼越來越小';
+      if (x.walk === '兩邊') return `單雙號兩邊都派，依${g.dirWord}方向走（${nums}）`;
+      if (x.walk === '另一邊') return `回頭派${g.side}側，依${g.dirWord}方向走出來`;
+      return `走${g.side}側，依${g.dirWord}方向走（${nums}）`;
+    }
+    const w = x.walk === '兩邊' ? '兩邊都派' : x.walk === '另一邊' ? '派另一邊出來' : '派' + x.walk;
+    return `${g.dirTxt}走，${w}`;
   }
 
   /* ---------- 空間索引 ---------- */
@@ -568,6 +686,15 @@ const Core = (() => {
     return best ? best.a : null;
   }
 
+  // 直走時的說法：「請走單號側，依順向方向直走」／「單雙號兩邊都派，依順向方向直走」／「請朝西（270度）直走」
+  function straightText(net, x) {
+    const g = stepGuide(net, x);
+    if (!g.known) return `請${g.dirTxt}直走` + (x.dead ? '，這段不用派' : '');
+    if (x.dead) return `請依${g.dirWord}方向直走，這段不用派`;
+    if (x.walk === '兩邊') return `單雙號兩邊都派，依${g.dirWord}方向直走`;
+    return `請走${g.side}側，依${g.dirWord}方向直走`;
+  }
+
   /* ---------- 轉彎提示 ---------- */
   function pointAtRoute(route, d) {
     const { cum, coords } = route;
@@ -589,8 +716,9 @@ const Core = (() => {
     const degree = v => net.adj[v].length;
     if (!st.length) return M;
     const first = net.chains[st[0].c];
-    const sideTxt = x => x.dead ? (route.back ? '往停車點' : '這段不用派') : x.walk === '兩邊' ? '兩邊都派' : x.walk === '另一邊' ? '派另一邊出來' : '派' + x.walk;
-    M.push({ d: 0, type: 'start', dir: '出發', name: first.name, walk: st[0].walk, text: route.back ? '往停車的地方走' + (first.name ? '，沿著' + first.name + '走' : '') : '開始派報' + (first.name ? '，沿著' + first.name + '走' : '') + '，' + sideTxt(st[0]) });
+    // 一律講門牌單雙號與順逆向；判斷不出時講方位與度數
+    const sideTxt = x => route.back && x.dead ? stepGuide(net, x).dirTxt + '走，往停車點' : guideText(net, x);
+    M.push({ d: 0, type: 'start', dir: '出發', name: first.name, walk: st[0].walk, text: route.back ? '往停車的地方走，' + (first.name ? '沿著' + first.name + '，' : '') + stepGuide(net, st[0]).dirTxt + '走' : '開始派報' + (first.name ? '，在' + first.name : '') + '，' + sideTxt(st[0]) });
     for (let k = 1; k < st.length; k++) {
       const node = st[k].from, d = st[k].d0;
       const prev = st[k - 1], cur = st[k];
@@ -617,8 +745,8 @@ const Core = (() => {
       const m = { d, type: dir === '回頭' ? 'uturn' : 'turn', dir, ang, name: cc.name, k, walk: cur.walk, dead: cur.dead };
       if (dir === '回頭') {
         if (cur.side && prev.side && cur.c === prev.c) m.text = '過馬路到對面，回頭' + sideTxt(cur);
-        else if (cur.c === prev.c && cur.outOf) m.text = (deadEnd ? '到底了，' : '') + '回頭，派另一邊出來';
-        else m.text = (deadEnd ? '到底了，回頭' : '回頭') + (cur.dead ? '，這段不用派' : '');
+        else if (cur.c === prev.c && cur.outOf) m.text = (deadEnd ? '到底了，' : '') + sideTxt(cur);
+        else m.text = (deadEnd ? '到底了，回頭' : '回頭') + '，' + sideTxt(cur);
       }
       else m.text = dir + (cc.name && cc.name !== pc.name ? '，轉進' + cc.name : '') + '，' + sideTxt(cur);
       // 右進左出：進去派右手邊，之後原路出來派另一邊
@@ -626,7 +754,7 @@ const Core = (() => {
         let j = k + 1; while (j < st.length && !(st[j].c === cur.c && st[j].outOf)) j++;
         const isDead = j < st.length && degree(st[j].from) === 1 && j === k + 1;
         m.inout = true;
-        m.text = dir + (cc.name && cc.name !== pc.name ? '，轉進' + cc.name : '') + (isDead ? '，這條是死巷' : '') + '，右進左出：進去先派右手邊';
+        m.text = dir + (cc.name && cc.name !== pc.name ? '，轉進' + cc.name : '') + (isDead ? '，這條是死巷' : '') + '，右進左出：進去先' + sideTxt(cur);
       }
       M.push(m);
     }
@@ -682,7 +810,9 @@ const Core = (() => {
     const t = norm(text);
     if (!t) return { cmd: 'none' };
     if (/廁所|洗手間|化妝室|尿尿|上大號/.test(t)) return { cmd: 'toilet' };
-    if (/拍照|照相|拍一張|拍下來/.test(t)) return { cmd: 'photo' };
+    if (/準備拍照|打開相機|開相機|開啟相機|準備照相/.test(t)) return { cmd: 'campre' };
+    if (/拍照|照相|拍一張|拍下來|快門|茄子/.test(t)) return { cmd: 'photo' };
+    if (/關閉相機|關掉相機|不拍了|取消拍照/.test(t)) return { cmd: 'camclose' };
     if (/下一(個|站|圈)|停車點|停哪|騎到哪/.test(t) && !/號/.test(t)) return { cmd: 'nextpark' };
     // 修正位置：「你報錯了，我現在在萬大路449巷10號這邊」
     if (/[路街巷弄號口段]/.test(t) && /在|位置|報錯|錯了|不對/.test(t)) {
@@ -785,6 +915,7 @@ const Core = (() => {
     dist, bearing, angDiff, projSeg, pointInPoly, polyLength, pointAlong, bbox, norm, normRoad, cnToNum,
     buildNetwork, nearestChain, chainsNear, markVisits, dijkstra, planRoute, expandRoute, buildManeuvers,
     nearestJunction, itemFlyers, selectLoop, suggestPark, planLoops, junctionLabel, nearestAddr, routeBetween,
+    stepGuide, guideText, cardinal, straightText,
     pointAtRoute, createTracker, trackUpdate, trackRelocate, parseCommand, resolvePlace,
   };
 })();
