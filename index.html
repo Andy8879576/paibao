@@ -190,6 +190,11 @@ body.mode-draw #rose,body.mode-bedit #rose,body.mode-edit #rose{display:none}
 .camBar{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 22px);display:flex;align-items:center;justify-content:space-around}
 .camBar button{color:#fff;font-size:16px;font-weight:700;min-width:64px;min-height:48px}
 #camShot{width:78px;height:78px;border-radius:50%;background:#fff;border:5px solid rgba(255,255,255,.45);background-clip:padding-box}
+#hfPill{color:#1B6B3A;border-color:#2E9E5B}
+body.mode-nav #hfPill{position:fixed;right:12px;top:calc(env(safe-area-inset-top) + 212px)}
+#hfPill.off{color:var(--muted);border-color:var(--line)}
+.hrow{display:grid;grid-template-columns:44px 1fr auto;gap:8px;font-size:14px;padding:6px 0;border-bottom:1px solid var(--line);align-items:baseline}
+.hrow span{color:var(--muted);font-size:12px}.hrow i{font-style:normal;color:#1F4E9E;font-weight:700;font-size:13px}
 .vtx.sel{background:#C2382F;color:#fff;border-color:#fff}
 .mid{width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.9);border:2px dashed var(--blue);color:var(--blue);font:700 16px/17px var(--font);text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.3);cursor:pointer}
 .blockchip small .ver{margin-left:8px;opacity:.75}
@@ -222,7 +227,8 @@ body.mode-draw #cross{display:block}
 <div id="map"></div>
 
 <header id="top">
-  <button class="blockchip" id="btnBlock" aria-label="選擇區塊"><small>目前區塊<span class="ver" id="verChip">v1.7.0</span></small><b id="blockName">還沒有區塊</b></button>
+  <button class="blockchip" id="btnBlock" aria-label="選擇區塊"><small>目前區塊<span class="ver" id="verChip">v1.7.1</span></small><b id="blockName">還沒有區塊</b></button>
+  <button class="pill" id="hfPill" type="button" style="display:none">🎙 語音待命中</button>
   <div class="pill" id="gpsPill"><i></i><span>GPS 定位中</span></div>
 </header>
 
@@ -405,6 +411,10 @@ body.mode-draw #cross{display:block}
   <h3>騎樓定位（步伐推算）</h3>
   <div class="set"><label>GPS 變差時用步伐推算<small>在騎樓下訊號不好時，用手機感應走路的步數，沿著規劃的路線推算位置；訊號好時自動改回 GPS。</small></label><div class="sw"><input type="checkbox" data-set="pdr"><span></span></div></div>
   <div class="set col"><div class="top"><label>每一步大約多長</label><span class="val" data-show="stepLen"></span></div><input type="range" min="0.4" max="0.9" step="0.05" data-set="stepLen"></div>
+  <h3>語音指令</h3>
+  <div class="set"><label>導航時語音待命<small>按「開始派報」後一直在聽，不用每次按「說指令」。直接說「準備拍照」「拍照」「重新定位」「重複」「進度」等。</small></label><div class="sw"><input type="checkbox" data-set="handsFree"><span></span></div></div>
+  <p class="note">最近聽到的話（用來檢查辨識得對不對）：</p>
+  <div id="heardList"></div>
   <h3>耳機</h3>
   <div class="set"><label>用耳機按鍵操作<small>按一下：重複提示；下一首：說指令，相機打開時是拍照（試驗中）</small></label><div class="sw"><input type="checkbox" data-set="earBtn"><span></span></div></div>
   <h3>資料</h3>
@@ -413,7 +423,7 @@ body.mode-draw #cross{display:block}
   <input type="file" id="bkFile" accept=".json,application/json" hidden>
   <div class="btnrow"><button class="btn danger" id="wipeAll">刪除區塊與進度</button></div>
   <p class="note">派報紀錄與照片不會被刪除。區塊被刪掉時，它的紀錄仍會保留。</p>
-  <p class="verline">派報系統　版本 <b id="verText">v1.7.0</b>（2026-11-26）<br><span id="verStatus">尚未檢查更新</span></p>
+  <p class="verline">派報系統　版本 <b id="verText">v1.7.1</b>（2026-11-26）<br><span id="verStatus">尚未檢查更新</span></p>
   <div class="btnrow"><button class="btn" id="verCheck">檢查更新</button></div>
 </section>
 
@@ -553,9 +563,12 @@ const Core = (() => {
     }
     return total + cur;
   }
+  // 語音辨識有時給簡體字：常用字轉成繁體再比對
+  const S2T_A = '号暂继续复过规划进厕标记这结准备机关闭开启处门边条张么们帮请说听讲错对报点车场华东为个后头转现时间区块图楼层发远广园兴宁庆乡汉济贵阳内门宝万义罗龙凤寿丰侨线环艺爱乐云湾们吗没还让给应该这着将从与无实灯场业树农园学银医厅馆双单顺动继', S2T_B = '號暫繼續複過規劃進廁標記這結準備機關閉開啟處門邊條張麼們幫請說聽講錯對報點車場華東為個後頭轉現時間區塊圖樓層發遠廣園興寧慶鄉漢濟貴陽內門寶萬義羅龍鳳壽豐僑線環藝愛樂雲灣們嗎沒還讓給應該這著將從與無實燈場業樹農園學銀醫廳館雙單順動繼';
+  const s2t = s => s.replace(/[号暂继续复过规划进厕标记这结准备机关闭开启处门边条张么们帮请说听讲错对报点车场华东为个后头转现时间区块图楼层发远广园兴宁庆乡汉济贵阳内门宝万义罗龙凤寿丰侨线环艺爱乐云湾们吗没还让给应该这着将从与无实灯场业树农园学银医厅馆双单顺动继]/g, ch => S2T_B[S2T_A.indexOf(ch)]);
   function norm(s) {
     if (!s) return '';
-    s = String(s).replace(/[\uFF10-\uFF19]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFF10 + 48));
+    s = s2t(String(s)).replace(/[\uFF10-\uFF19]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFF10 + 48));
     s = s.replace(/[零〇一二兩三四五六七八九十百千]+(?=[巷弄號之樓衖])/g, m => String(cnToNum(m)));
     s = s.replace(/臺/g, '台').replace(/[\s,，。、．.!！?？]/g, '');
     return s;
@@ -1298,8 +1311,20 @@ const Core = (() => {
 
   /* ---------- 語音指令 ---------- */
   function parseCommand(text) {
-    const t = norm(text);
+    // 去掉稱呼和語助詞：「小何，請幫我重新定位一下好嗎」→「重新定位」
+    const t = norm(text)
+      .replace(/^(小何|小河|小和|喂|欸|那個|嗯|請|麻煩|幫我|我要|我想|你|好)+/, '')
+      .replace(/(一下|好嗎|好不好|謝謝|吧|啦|喔|哦)+$/, '');
     if (!t) return { cmd: 'none' };
+    // 重新定位：可以一句說完（重新定位萬大路410號），也可以先說「重新定位」再說地址
+    const re = t.match(/(重新定位|重新校正|定位錯了?|定位不對|位置錯了?|位置不對|修正位置|校正位置|更正位置|更正定位|修正定位|你報錯了?|報錯了)(.*)$/);
+    if (re) {
+      const rest = re[2].replace(/^(我)?(現在)?(是)?(在|到|是|為|:)?/, '').replace(/(這邊|這裡|這兒|附近|旁邊|前面|門口|對面|了|啦|喔|耶)+$/, '');
+      if (/[路街巷弄號口段]/.test(rest) && rest.length >= 2) return { cmd: 'locate', arg: rest };
+      return { cmd: 'relocate' };
+    }
+    // 只說地址（例如「萬大路410號」）也當成修正位置
+    if (/^(我)?(現在)?(在)?[^\d]{1,12}(路|街|大道)([一二三四五六七八九十\d]+段)?(\d+巷)?(\d+弄)?\d+(之\d+)?號/.test(t)) return { cmd: 'locate', arg: t.replace(/^(我)?(現在)?(在)?/, '').replace(/(這邊|這裡|附近|旁邊|前面|門口)+$/, '') };
     if (/廁所|洗手間|化妝室|尿尿|上大號/.test(t)) return { cmd: 'toilet' };
     if (/準備拍照|打開相機|開相機|開啟相機|準備照相/.test(t)) return { cmd: 'campre' };
     if (/拍照|照相|拍一張|拍下來|快門|茄子/.test(t)) return { cmd: 'photo' };
@@ -1415,7 +1440,7 @@ const Core = (() => {
 (() => {
   'use strict';
   const C = Core;
-  const APP_VERSION = '1.7.0', APP_DATE = '2026-11-26';
+  const APP_VERSION = '1.7.1', APP_DATE = '2026-11-26';
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
 
@@ -1425,7 +1450,7 @@ const Core = (() => {
     set(k, v) { try { localStorage.setItem('pb_' + k, JSON.stringify(v)); return true; } catch (e) { toast('手機儲存空間不夠，這筆資料沒有存起來'); return false; } },
     del(k) { try { localStorage.removeItem('pb_' + k); } catch (e) { /* 無 */ } },
   };
-  const DEF = { preDist: 30, nearDist: 10, periodic: 0, rate: 1.0, maxAcc: 40, offRoute: 25, returnToStart: false, includePaths: true, showAddr: true, earBtn: false, layer: 'osm', orient: 'heading', cap: 400, density: 10, loopMode: true, twoMode: 'grade', showWC: true, pdr: true, stepLen: 0.65 };
+  const DEF = { preDist: 30, nearDist: 10, periodic: 0, rate: 1.0, maxAcc: 40, offRoute: 25, returnToStart: false, includePaths: true, showAddr: true, earBtn: false, layer: 'osm', orient: 'heading', cap: 400, density: 10, loopMode: true, twoMode: 'grade', showWC: true, pdr: true, stepLen: 0.65, handsFree: true };
   const S = Object.assign({}, DEF, LS.get('settings', {}));
   const saveSettings = () => LS.set('settings', S);
   // 升級到 1.6：先在手機裡備份一份目前的區塊與進度（不含圖資），再做任何事
@@ -1955,6 +1980,7 @@ const Core = (() => {
   }
   if (tts.ok) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
   let capT;
+  const spoke = { text: '', until: 0 };
   function say(text, opt = {}) {
     if (!text) return;
     const cap = $('#caption'); cap.querySelector('span').textContent = text; cap.style.display = 'flex';
@@ -1965,6 +1991,8 @@ const Core = (() => {
     if (opt.queue !== true) speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'zh-TW'; if (tts.voice) u.voice = tts.voice; u.rate = S.rate; u.volume = 1;
+    spoke.text = text; spoke.until = Date.now() + 1500 + text.length * 250;
+    u.onend = () => { spoke.until = Date.now() + 700; };
     speechSynthesis.speak(u);
   }
   function beep(freq = 880, ms = 120) {
@@ -2052,6 +2080,7 @@ const Core = (() => {
     if (!route) { toast('規劃不出路線，請重新下載圖資再試'); return; }
     nav = { route, tr: C.createTracker(route), mi: 0, stepPtr: 0, flags: new Map(), paused: false, lastSpeak: 0, lastReroute: Date.now(), offSince: 0, markSaid: new Set(), lastSaid: '', lastFixT: Date.now(), far: false, lastFarSay: 0, loop: loopInfo };
     setMode('nav'); keepAwake();
+    hfStart();
     st.follow = true; $('#fabFollow').classList.add('on');
     if (f) map.setView(start, Math.max(map.getZoom(), 18));
     drawPark();
@@ -2070,6 +2099,7 @@ const Core = (() => {
   function stopNav(done) {
     if (!nav) return;
     saveProgress(true); sessSave(true);
+    hfStop();
     nav = null; L_route.clearLayers(); L_arrows.clearLayers(); map.removeLayer(L_arrows); sideL = sideR = routeAhead = null;
     L_park.clearLayers();
     if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
@@ -2456,6 +2486,10 @@ const Core = (() => {
     }
   }
   $$('.todayBtn').forEach(b => b.onclick = saveToday);
+  function renderHeard() {
+    const box = $('#heardList'); if (!box) return;
+    box.innerHTML = heard.length ? heard.map(h => `<div class="hrow"><span>${esc(fmtTime(h.t))}</span><b>${esc(h.s)}</b><i>${esc(h.r)}</i></div>`).join('') : '<div class="empty">還沒有聽到的話</div>';
+  }
   $('#phSave').onclick = async () => { if (!curPhoto) return; curPhoto.note = $('#phNote').value.trim(); await photoPut(curPhoto); closeSheets(); toast('備註已儲存'); };
   $('#phMap').onclick = () => { if (!curPhoto) return; closeSheets(); st.follow = false; $('#fabFollow').classList.remove('on'); map.setView([curPhoto.lat, curPhoto.lon], 19); };
   $('#phDl').onclick = () => {
@@ -2837,7 +2871,73 @@ const Core = (() => {
   /* ---------- 語音指令 ---------- */
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null;
+  // 聽到一句話：回傳 'done'（處理完）、'more'（還要繼續聽，例如相機開著或等地址）、'unknown'（聽不懂）、'echo'（是自己念的）
+  let awaitAddr = 0;
+  const heard = LS.get('heard', []);
+  function logHeard(t, what) { heard.unshift({ t: Date.now(), s: t, r: what }); heard.length = Math.min(heard.length, 15); LS.set('heard', heard); }
+  function isEcho(t) {
+    if (Date.now() > spoke.until || !spoke.text) return false;
+    const a = C.norm(t), b = C.norm(spoke.text); if (!a) return true;
+    let hit = 0; for (const ch of a) if (b.includes(ch)) hit++;
+    return hit / a.length > 0.6;
+  }
+  function handleHeard(alts) {
+    const t0 = alts[0] || '';
+    if (isEcho(t0)) return 'echo';
+    if (awaitAddr && Date.now() - awaitAddr < 25000) {
+      awaitAddr = 0;
+      if (/取消|算了|不用了/.test(t0)) { say('好，取消重新定位', { noLast: true }); logHeard(t0, '取消重新定位'); return 'done'; }
+      const addr = C.norm(t0).replace(/^(我)?(現在)?(是)?(在|到)?/, '').replace(/(這邊|這裡|附近|旁邊|前面|門口)+$/, '');
+      logHeard(t0, '重新定位到：' + addr);
+      correctByText(addr);
+      return 'done';
+    }
+    let c = null, raw = t0;
+    for (const a of alts) { const x = C.parseCommand(a); if (x.cmd !== 'unknown' && x.cmd !== 'none') { c = x; raw = a; break; } }
+    if (!c) { logHeard(t0, '聽不懂'); return 'unknown'; }
+    logHeard(raw, CMD_NAME[c.cmd] || c.cmd);
+    doCmd(c, raw);
+    return cam.on || awaitAddr ? 'more' : 'done';
+  }
+  const CMD_NAME = { pause: '暫停', resume: '繼續', repeat: '重複', skip: '跳過', reroute: '重新規劃', progress: '進度', mark: '標記', locate: '重新定位', relocate: '重新定位（等地址）', stop: '結束', toilet: '找廁所', nextpark: '下一個停車點', streetdone: '這條派完了', campre: '準備拍照', photo: '拍照', camclose: '關相機' };
+
+  // 導航中語音待命：不用按按鈕，直接說
+  const hf = { on: false, rec: null, want: false, fails: 0 };
+  function hfStart() {
+    if (!SR || !S.handsFree) return;
+    hf.want = true;
+    if (hf.on) return;
+    try { if (rec) rec.abort(); } catch (e) { /* 無 */ }
+    const r = new SR(); r.lang = 'zh-TW'; r.interimResults = false; r.maxAlternatives = 4; r.continuous = true;
+    hf.rec = r;
+    r.onstart = () => { hf.on = true; hf.fails = 0; hfShow(); };
+    r.onresult = e => {
+      const res = e.results[e.results.length - 1]; if (!res.isFinal) return;
+      const alts = [...res].map(a => a.transcript);
+      const out = handleHeard(alts);
+      if (out === 'unknown') $('#hfPill').textContent = '🎙 聽到：' + alts[0].slice(0, 12);
+      else hfShow();
+    };
+    r.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { hf.want = false; toast('語音待命需要麥克風權限：請到「設定 › Safari › 麥克風」允許', 6000); } };
+    r.onend = () => {
+      hf.on = false; hf.rec = null; hfShow();
+      if (hf.want && nav) setTimeout(() => { if (hf.want && nav && !hf.on) { hf.fails++; if (hf.fails > 5) { hf.want = false; hfShow(); return; } hfStart(); } }, 350);
+    };
+    try { r.start(); } catch (e) { hf.on = false; hfShow(); }
+  }
+  function hfStop() { hf.want = false; try { if (hf.rec) hf.rec.abort(); } catch (e) { /* 無 */ } hf.on = false; hfShow(); }
+  function hfShow() {
+    const p = $('#hfPill'); if (!p) return;
+    p.style.display = nav && S.handsFree && SR ? '' : 'none';
+    p.classList.toggle('off', !hf.on);
+    p.textContent = hf.on ? '🎙 語音待命中' : '🎙 語音停了，按這裡開啟';
+  }
+  $('#hfPill').onclick = () => { hf.fails = 0; hfStart(); };
+
   function listen(onText) {
+    // 導航中語音已經在待命：直接說就可以
+    if (!onText && hf.on) { beep(880, 80); toast('語音待命中，直接說就可以'); return; }
+    if (!onText && nav && S.handsFree) { hf.fails = 0; hfStart(); beep(880, 80); return; }
     if (!SR) {
       const t = window.prompt('這支手機的 Safari 不能語音輸入，請打字輸入指令：');
       if (t) onText ? onText(t) : runText(t);
@@ -2859,12 +2959,13 @@ const Core = (() => {
       const res = e.results[e.results.length - 1];
       const alts = [...res].map(a => a.transcript);
       if (onText) { clearTimeout(tmo); return onText(alts[0]); }
-      let c = null, raw = alts[0];
-      for (const a of alts) { const x = C.parseCommand(a); if (x.cmd !== 'unknown' && x.cmd !== 'none') { c = x; raw = a; break; } }
-      if (!c) c = C.parseCommand(alts[0]);
-      if (cam.on && c.cmd === 'unknown') { arm(20000); return; } // 相機開著：沒聽懂就繼續等「照相」
-      doCmd(c, raw);
-      if (cam.on) arm(20000); // 相機開著就繼續聽「照相」「取消」
+      const out = handleHeard(alts);
+      if (out === 'unknown') {
+        if (cam.on || awaitAddr) { arm(20000); return; }
+        const m = '聽不懂「' + alts[0] + '」，可以說：重新定位、準備拍照、重複、進度、暫停'; toast(m, 5000); say('聽不懂，請再說一次', { noLast: true });
+        arm(10000); return; // 再給一次機會
+      }
+      if (out === 'more' || out === 'echo') arm(20000);
       else { clearTimeout(tmo); try { r0.stop(); } catch (err) { /* 無 */ } }
     };
     rec.onerror = e => {
@@ -2891,6 +2992,7 @@ const Core = (() => {
         say(m, { noLast: true }); toast(m); break;
       }
       case 'toilet': findToilet(); break;
+      case 'relocate': awaitAddr = Date.now(); say('好，請說你現在的位置，例如萬大路410號，或萬大路449巷口', { noLast: true }); toast('請說你現在的位置'); break;
       case 'campre': openCam(true); break;
       case 'photo': if (cam.on) shoot(); else openCam(true, true); break;
       case 'camclose': closeCam(); say('相機關了', { noLast: true }); break;
@@ -2966,7 +3068,7 @@ const Core = (() => {
     closeSheets(true);
     if (id === 'shBlocks') renderBlockList();
     if (id === 'shSettings' || id === 'shLayer') syncSettingsUI();
-    if (id === 'shSettings') loadToday();
+    if (id === 'shSettings') { loadToday(); renderHeard(); }
     $('#backdrop').style.display = 'block'; $('#' + id).classList.add('open');
   }
   function closeSheets(keepBackdrop) {

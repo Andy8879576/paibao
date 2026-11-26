@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const C = Core;
-  const APP_VERSION = '1.7.0', APP_DATE = '2026-11-26';
+  const APP_VERSION = '1.7.1', APP_DATE = '2026-11-26';
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
 
@@ -11,7 +11,7 @@
     set(k, v) { try { localStorage.setItem('pb_' + k, JSON.stringify(v)); return true; } catch (e) { toast('手機儲存空間不夠，這筆資料沒有存起來'); return false; } },
     del(k) { try { localStorage.removeItem('pb_' + k); } catch (e) { /* 無 */ } },
   };
-  const DEF = { preDist: 30, nearDist: 10, periodic: 0, rate: 1.0, maxAcc: 40, offRoute: 25, returnToStart: false, includePaths: true, showAddr: true, earBtn: false, layer: 'osm', orient: 'heading', cap: 400, density: 10, loopMode: true, twoMode: 'grade', showWC: true, pdr: true, stepLen: 0.65 };
+  const DEF = { preDist: 30, nearDist: 10, periodic: 0, rate: 1.0, maxAcc: 40, offRoute: 25, returnToStart: false, includePaths: true, showAddr: true, earBtn: false, layer: 'osm', orient: 'heading', cap: 400, density: 10, loopMode: true, twoMode: 'grade', showWC: true, pdr: true, stepLen: 0.65, handsFree: true };
   const S = Object.assign({}, DEF, LS.get('settings', {}));
   const saveSettings = () => LS.set('settings', S);
   // 升級到 1.6：先在手機裡備份一份目前的區塊與進度（不含圖資），再做任何事
@@ -541,6 +541,7 @@
   }
   if (tts.ok) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
   let capT;
+  const spoke = { text: '', until: 0 };
   function say(text, opt = {}) {
     if (!text) return;
     const cap = $('#caption'); cap.querySelector('span').textContent = text; cap.style.display = 'flex';
@@ -551,6 +552,8 @@
     if (opt.queue !== true) speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'zh-TW'; if (tts.voice) u.voice = tts.voice; u.rate = S.rate; u.volume = 1;
+    spoke.text = text; spoke.until = Date.now() + 1500 + text.length * 250;
+    u.onend = () => { spoke.until = Date.now() + 700; };
     speechSynthesis.speak(u);
   }
   function beep(freq = 880, ms = 120) {
@@ -638,6 +641,7 @@
     if (!route) { toast('規劃不出路線，請重新下載圖資再試'); return; }
     nav = { route, tr: C.createTracker(route), mi: 0, stepPtr: 0, flags: new Map(), paused: false, lastSpeak: 0, lastReroute: Date.now(), offSince: 0, markSaid: new Set(), lastSaid: '', lastFixT: Date.now(), far: false, lastFarSay: 0, loop: loopInfo };
     setMode('nav'); keepAwake();
+    hfStart();
     st.follow = true; $('#fabFollow').classList.add('on');
     if (f) map.setView(start, Math.max(map.getZoom(), 18));
     drawPark();
@@ -656,6 +660,7 @@
   function stopNav(done) {
     if (!nav) return;
     saveProgress(true); sessSave(true);
+    hfStop();
     nav = null; L_route.clearLayers(); L_arrows.clearLayers(); map.removeLayer(L_arrows); sideL = sideR = routeAhead = null;
     L_park.clearLayers();
     if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
@@ -1042,6 +1047,10 @@
     }
   }
   $$('.todayBtn').forEach(b => b.onclick = saveToday);
+  function renderHeard() {
+    const box = $('#heardList'); if (!box) return;
+    box.innerHTML = heard.length ? heard.map(h => `<div class="hrow"><span>${esc(fmtTime(h.t))}</span><b>${esc(h.s)}</b><i>${esc(h.r)}</i></div>`).join('') : '<div class="empty">還沒有聽到的話</div>';
+  }
   $('#phSave').onclick = async () => { if (!curPhoto) return; curPhoto.note = $('#phNote').value.trim(); await photoPut(curPhoto); closeSheets(); toast('備註已儲存'); };
   $('#phMap').onclick = () => { if (!curPhoto) return; closeSheets(); st.follow = false; $('#fabFollow').classList.remove('on'); map.setView([curPhoto.lat, curPhoto.lon], 19); };
   $('#phDl').onclick = () => {
@@ -1423,7 +1432,73 @@
   /* ---------- 語音指令 ---------- */
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null;
+  // 聽到一句話：回傳 'done'（處理完）、'more'（還要繼續聽，例如相機開著或等地址）、'unknown'（聽不懂）、'echo'（是自己念的）
+  let awaitAddr = 0;
+  const heard = LS.get('heard', []);
+  function logHeard(t, what) { heard.unshift({ t: Date.now(), s: t, r: what }); heard.length = Math.min(heard.length, 15); LS.set('heard', heard); }
+  function isEcho(t) {
+    if (Date.now() > spoke.until || !spoke.text) return false;
+    const a = C.norm(t), b = C.norm(spoke.text); if (!a) return true;
+    let hit = 0; for (const ch of a) if (b.includes(ch)) hit++;
+    return hit / a.length > 0.6;
+  }
+  function handleHeard(alts) {
+    const t0 = alts[0] || '';
+    if (isEcho(t0)) return 'echo';
+    if (awaitAddr && Date.now() - awaitAddr < 25000) {
+      awaitAddr = 0;
+      if (/取消|算了|不用了/.test(t0)) { say('好，取消重新定位', { noLast: true }); logHeard(t0, '取消重新定位'); return 'done'; }
+      const addr = C.norm(t0).replace(/^(我)?(現在)?(是)?(在|到)?/, '').replace(/(這邊|這裡|附近|旁邊|前面|門口)+$/, '');
+      logHeard(t0, '重新定位到：' + addr);
+      correctByText(addr);
+      return 'done';
+    }
+    let c = null, raw = t0;
+    for (const a of alts) { const x = C.parseCommand(a); if (x.cmd !== 'unknown' && x.cmd !== 'none') { c = x; raw = a; break; } }
+    if (!c) { logHeard(t0, '聽不懂'); return 'unknown'; }
+    logHeard(raw, CMD_NAME[c.cmd] || c.cmd);
+    doCmd(c, raw);
+    return cam.on || awaitAddr ? 'more' : 'done';
+  }
+  const CMD_NAME = { pause: '暫停', resume: '繼續', repeat: '重複', skip: '跳過', reroute: '重新規劃', progress: '進度', mark: '標記', locate: '重新定位', relocate: '重新定位（等地址）', stop: '結束', toilet: '找廁所', nextpark: '下一個停車點', streetdone: '這條派完了', campre: '準備拍照', photo: '拍照', camclose: '關相機' };
+
+  // 導航中語音待命：不用按按鈕，直接說
+  const hf = { on: false, rec: null, want: false, fails: 0 };
+  function hfStart() {
+    if (!SR || !S.handsFree) return;
+    hf.want = true;
+    if (hf.on) return;
+    try { if (rec) rec.abort(); } catch (e) { /* 無 */ }
+    const r = new SR(); r.lang = 'zh-TW'; r.interimResults = false; r.maxAlternatives = 4; r.continuous = true;
+    hf.rec = r;
+    r.onstart = () => { hf.on = true; hf.fails = 0; hfShow(); };
+    r.onresult = e => {
+      const res = e.results[e.results.length - 1]; if (!res.isFinal) return;
+      const alts = [...res].map(a => a.transcript);
+      const out = handleHeard(alts);
+      if (out === 'unknown') $('#hfPill').textContent = '🎙 聽到：' + alts[0].slice(0, 12);
+      else hfShow();
+    };
+    r.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { hf.want = false; toast('語音待命需要麥克風權限：請到「設定 › Safari › 麥克風」允許', 6000); } };
+    r.onend = () => {
+      hf.on = false; hf.rec = null; hfShow();
+      if (hf.want && nav) setTimeout(() => { if (hf.want && nav && !hf.on) { hf.fails++; if (hf.fails > 5) { hf.want = false; hfShow(); return; } hfStart(); } }, 350);
+    };
+    try { r.start(); } catch (e) { hf.on = false; hfShow(); }
+  }
+  function hfStop() { hf.want = false; try { if (hf.rec) hf.rec.abort(); } catch (e) { /* 無 */ } hf.on = false; hfShow(); }
+  function hfShow() {
+    const p = $('#hfPill'); if (!p) return;
+    p.style.display = nav && S.handsFree && SR ? '' : 'none';
+    p.classList.toggle('off', !hf.on);
+    p.textContent = hf.on ? '🎙 語音待命中' : '🎙 語音停了，按這裡開啟';
+  }
+  $('#hfPill').onclick = () => { hf.fails = 0; hfStart(); };
+
   function listen(onText) {
+    // 導航中語音已經在待命：直接說就可以
+    if (!onText && hf.on) { beep(880, 80); toast('語音待命中，直接說就可以'); return; }
+    if (!onText && nav && S.handsFree) { hf.fails = 0; hfStart(); beep(880, 80); return; }
     if (!SR) {
       const t = window.prompt('這支手機的 Safari 不能語音輸入，請打字輸入指令：');
       if (t) onText ? onText(t) : runText(t);
@@ -1445,12 +1520,13 @@
       const res = e.results[e.results.length - 1];
       const alts = [...res].map(a => a.transcript);
       if (onText) { clearTimeout(tmo); return onText(alts[0]); }
-      let c = null, raw = alts[0];
-      for (const a of alts) { const x = C.parseCommand(a); if (x.cmd !== 'unknown' && x.cmd !== 'none') { c = x; raw = a; break; } }
-      if (!c) c = C.parseCommand(alts[0]);
-      if (cam.on && c.cmd === 'unknown') { arm(20000); return; } // 相機開著：沒聽懂就繼續等「照相」
-      doCmd(c, raw);
-      if (cam.on) arm(20000); // 相機開著就繼續聽「照相」「取消」
+      const out = handleHeard(alts);
+      if (out === 'unknown') {
+        if (cam.on || awaitAddr) { arm(20000); return; }
+        const m = '聽不懂「' + alts[0] + '」，可以說：重新定位、準備拍照、重複、進度、暫停'; toast(m, 5000); say('聽不懂，請再說一次', { noLast: true });
+        arm(10000); return; // 再給一次機會
+      }
+      if (out === 'more' || out === 'echo') arm(20000);
       else { clearTimeout(tmo); try { r0.stop(); } catch (err) { /* 無 */ } }
     };
     rec.onerror = e => {
@@ -1477,6 +1553,7 @@
         say(m, { noLast: true }); toast(m); break;
       }
       case 'toilet': findToilet(); break;
+      case 'relocate': awaitAddr = Date.now(); say('好，請說你現在的位置，例如萬大路410號，或萬大路449巷口', { noLast: true }); toast('請說你現在的位置'); break;
       case 'campre': openCam(true); break;
       case 'photo': if (cam.on) shoot(); else openCam(true, true); break;
       case 'camclose': closeCam(); say('相機關了', { noLast: true }); break;
@@ -1552,7 +1629,7 @@
     closeSheets(true);
     if (id === 'shBlocks') renderBlockList();
     if (id === 'shSettings' || id === 'shLayer') syncSettingsUI();
-    if (id === 'shSettings') loadToday();
+    if (id === 'shSettings') { loadToday(); renderHeard(); }
     $('#backdrop').style.display = 'block'; $('#' + id).classList.add('open');
   }
   function closeSheets(keepBackdrop) {

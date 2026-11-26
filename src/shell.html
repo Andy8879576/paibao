@@ -190,6 +190,11 @@ body.mode-draw #rose,body.mode-bedit #rose,body.mode-edit #rose{display:none}
 .camBar{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 22px);display:flex;align-items:center;justify-content:space-around}
 .camBar button{color:#fff;font-size:16px;font-weight:700;min-width:64px;min-height:48px}
 #camShot{width:78px;height:78px;border-radius:50%;background:#fff;border:5px solid rgba(255,255,255,.45);background-clip:padding-box}
+#hfPill{color:#1B6B3A;border-color:#2E9E5B}
+body.mode-nav #hfPill{position:fixed;right:12px;top:calc(env(safe-area-inset-top) + 212px)}
+#hfPill.off{color:var(--muted);border-color:var(--line)}
+.hrow{display:grid;grid-template-columns:44px 1fr auto;gap:8px;font-size:14px;padding:6px 0;border-bottom:1px solid var(--line);align-items:baseline}
+.hrow span{color:var(--muted);font-size:12px}.hrow i{font-style:normal;color:#1F4E9E;font-weight:700;font-size:13px}
 .vtx.sel{background:#C2382F;color:#fff;border-color:#fff}
 .mid{width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.9);border:2px dashed var(--blue);color:var(--blue);font:700 16px/17px var(--font);text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.3);cursor:pointer}
 .blockchip small .ver{margin-left:8px;opacity:.75}
@@ -222,7 +227,8 @@ body.mode-draw #cross{display:block}
 <div id="map"></div>
 
 <header id="top">
-  <button class="blockchip" id="btnBlock" aria-label="選擇區塊"><small>目前區塊<span class="ver" id="verChip">v1.7.0</span></small><b id="blockName">還沒有區塊</b></button>
+  <button class="blockchip" id="btnBlock" aria-label="選擇區塊"><small>目前區塊<span class="ver" id="verChip">v1.7.1</span></small><b id="blockName">還沒有區塊</b></button>
+  <button class="pill" id="hfPill" type="button" style="display:none">🎙 語音待命中</button>
   <div class="pill" id="gpsPill"><i></i><span>GPS 定位中</span></div>
 </header>
 
@@ -405,6 +411,10 @@ body.mode-draw #cross{display:block}
   <h3>騎樓定位（步伐推算）</h3>
   <div class="set"><label>GPS 變差時用步伐推算<small>在騎樓下訊號不好時，用手機感應走路的步數，沿著規劃的路線推算位置；訊號好時自動改回 GPS。</small></label><div class="sw"><input type="checkbox" data-set="pdr"><span></span></div></div>
   <div class="set col"><div class="top"><label>每一步大約多長</label><span class="val" data-show="stepLen"></span></div><input type="range" min="0.4" max="0.9" step="0.05" data-set="stepLen"></div>
+  <h3>語音指令</h3>
+  <div class="set"><label>導航時語音待命<small>按「開始派報」後一直在聽，不用每次按「說指令」。直接說「準備拍照」「拍照」「重新定位」「重複」「進度」等。</small></label><div class="sw"><input type="checkbox" data-set="handsFree"><span></span></div></div>
+  <p class="note">最近聽到的話（用來檢查辨識得對不對）：</p>
+  <div id="heardList"></div>
   <h3>耳機</h3>
   <div class="set"><label>用耳機按鍵操作<small>按一下：重複提示；下一首：說指令，相機打開時是拍照（試驗中）</small></label><div class="sw"><input type="checkbox" data-set="earBtn"><span></span></div></div>
   <h3>資料</h3>
@@ -413,7 +423,7 @@ body.mode-draw #cross{display:block}
   <input type="file" id="bkFile" accept=".json,application/json" hidden>
   <div class="btnrow"><button class="btn danger" id="wipeAll">刪除區塊與進度</button></div>
   <p class="note">派報紀錄與照片不會被刪除。區塊被刪掉時，它的紀錄仍會保留。</p>
-  <p class="verline">派報系統　版本 <b id="verText">v1.7.0</b>（2026-11-26）<br><span id="verStatus">尚未檢查更新</span></p>
+  <p class="verline">派報系統　版本 <b id="verText">v1.7.1</b>（2026-11-26）<br><span id="verStatus">尚未檢查更新</span></p>
   <div class="btnrow"><button class="btn" id="verCheck">檢查更新</button></div>
 </section>
 
